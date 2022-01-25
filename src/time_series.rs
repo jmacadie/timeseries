@@ -176,12 +176,12 @@ impl<'a, 'b, 'c, T> Rem<&'c TimeSeries<'a, T>> for &'b TimeSeries<'a, T>
 // TODO: extend these operations to work with scalars as well
 
 #[cfg(test)]
-mod test {
+mod tests {
 
-use crate::{DateRange, Period};
-use time::{Date, Month};
+    use crate::{DateRange, Period};
+    use time::{Date, Month};
 
-use super::*;
+    use super::*;
 
     #[test]
     fn create_timeseries() {

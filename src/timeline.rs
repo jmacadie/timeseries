@@ -167,8 +167,18 @@ impl Iterator for TimeLine {
 
 #[cfg(test)]
 mod tests {
+
     use super::*;
 
+    #[test]
+    fn create_timeline() {}
+
+    #[test]
+    fn period_length() {}
+
+    #[test]
+    fn period_iterator() {}
+    
     // TODO: write some proper tests!
 
     #[test]
