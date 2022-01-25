@@ -3,24 +3,33 @@ use std::ops::{Add, Sub, Mul, Div, Rem};
 
 /// # TimeSeries
 /// 
-/// A coumpound object that holds both a timeline and an array of values that
+/// A compound object that holds both a timeline and an array of values that
 /// meaningfully relate to the matching time periods from the timeline
 /// 
-/// The timeline is held by reference, as it is assumed that a common timline
+/// The timeline is held by reference, as it is assumed that a common timeline
 /// will apply to the entire model.
 /// 
 /// The values are a vector of any type.
 /// 
-/// TimeSeries objects are intedned to be added, multipled, subtracted and divided,
+/// TimeSeries objects are intended to be added, multiplied, subtracted and divided,
 /// using pairwise arithmetic operations to every element across the timeline. For
 /// this to work there are some requirements:
 /// * the underlying value types must be the same in both TimeSeries objects. For
 /// example, you cannot add integers to floats)
-/// * the underlying value type must support the aritmetic operation. For example,
+/// * the underlying value type must support the arithmetic operation. For example,
 /// you cannot divide Strings and so you cannot divide TimeSeries of Strings
 /// * the timelines of the two TimeSeries objects must be the same. This would not
 /// normally be a problem in a common model where there is a single timeline for 
 /// the entire model
+/// 
+/// It's also worth noting that these arithmetic operations have been implemented
+/// on pointers to TimeSeries only. This is required as TimeSeries cannot implement
+/// the `Copy` trait, due it's wrapping of a vector, which does not implement the
+/// `Copy` trait. Without the `Copy` trait, all the arithmetic operations, and in fact
+/// any function call, move the operands. This would mean that after `let c = a + b;` 
+/// both `a` and `b` would no longer be available. Instead the only implemented operations
+/// are on references, so `let c = &a + &b;`, which allows `a` and `b` to persist beyond
+/// the addition call
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TimeSeries<'a, T> {
     pub(crate) timeline: &'a TimeLine,
@@ -83,11 +92,6 @@ impl<'a> TimeSeries<'a, f64> {
     }
 }
 
-// Only going to implement by reference versions of arithmetic operations:
-// - since vectors do not employ Copy, TimeSeries can't either
-// - this means that an operation on a TimesSeries object passed by
-//   value will always move (i.e. consume) the passed operand.
-//   I'm going to assume (for now) that the end user never wants that
 impl<'a, 'b, 'c, T> Add<&'c TimeSeries<'a, T>> for &'b TimeSeries<'a, T>
     where T: Add + Add<Output = T> + Copy
 {

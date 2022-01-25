@@ -9,6 +9,10 @@ pub struct DateRange {
 
 impl DateRange {
     
+    // TODO: write another constructor that takes a start date and a duration, rather just from and two
+    //  this will allow the DateRange object to more naturally fit with the Timeline object and avoid
+    //  the problem of stub periods when the two do not fit together
+
     pub fn new(from: Date, to: Date) -> Self {
         if from < to {
             Self {from, to}

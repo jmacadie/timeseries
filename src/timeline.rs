@@ -2,6 +2,21 @@ use time::{Date, Month, util::days_in_year_month};
 use crate::{Period, DateRange};
 use std::cmp;
 
+/// # Timeline
+/// 
+/// An object that represnts a contiguous period of time and an assocaited
+/// periodicity. The periodicity defines the chunks of time the timeline will be
+/// apportioned into and currently implements:
+/// * Daily
+/// * Weekly
+/// * Monthly
+/// * Quarterly
+/// * Annual
+/// 
+/// Because the time range is not guaranteed to be a whole number of time periods,
+/// the final period can be a short period. For example, a timeline that is 3 months
+/// and 2 days, with periodicity of monthly will comprise 4 time periods. The first
+/// three periods will be whole months and the final one will be 2 days
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TimeLine {
     pub(crate)range: DateRange,
@@ -23,6 +38,7 @@ impl TimeLine {
         }
     }
 
+    // TODO: don't take a range but dates from and to. This should support the new function that can index at a date
     /// Returns the number of time periods that will occur over the date
     /// range for a given periodicity.
     /// 
@@ -69,6 +85,12 @@ impl TimeLine {
         }
     }
 
+    // TODO: write the following:
+    //  * a function to return the index at a given date. Will be needed by the TimeSeries object to extract values at a given date
+    //  * a function to change periodicity. For example can see wanting to summarise up from Monthly calcs to an annual output
+    //  * a getter for an individual time period, returned as a DateRange
+    //  * a getter for a time slice (maybe? need to think of the use case)
+    
     // TODO: even needed?
     pub fn merge(self, other: TimeLine) -> Result<Option<TimeLine>, &'static str> {
         if self == other { return Ok(None); }
