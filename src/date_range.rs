@@ -1,6 +1,20 @@
 use time::Date;
 use std::cmp;
 
+/// # DateRange
+/// 
+/// Simply comprises a pair of `time::Date` objects that represent
+/// the start and end of a date range
+/// 
+/// ---
+/// ### To be implemented...
+/// This object allows us to implement a `date_diff` function that is
+/// aware of intervals of a month and upwards, which is missing from
+/// `time`
+/// 
+/// Also by using the alternate constructor that takes a start date
+/// and \[chunks of period, defined somehow\] we will effectively be
+/// able to implement a `date_add` function
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DateRange {
     pub(crate) from: Date,
@@ -12,6 +26,10 @@ impl DateRange {
     // TODO: write another constructor that takes a start date and a duration, rather just from and two
     //  this will allow the DateRange object to more naturally fit with the Timeline object and avoid
     //  the problem of stub periods when the two do not fit together
+    //  This would also allow us to get round the missing date_add method from Date for Durations above a week
+
+    // TODO: write methods to export how many days/weeks/months/years a DateRange covers
+    // This would effectively enable a date_diff method extension on Date
 
     pub fn new(from: Date, to: Date) -> Self {
         if from < to {
