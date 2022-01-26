@@ -57,20 +57,78 @@ impl<'a, T> TimeSeries<'a, T> {
         })
     }
 
+    /// Allows the user to provide a closure that defines the pairwise combination
+    /// of two time series
+    /// 
+    /// Note that for simple artihmetic operations (+, -, *, /) these operators are already
+    /// directly defined for the TimeSeries object, so that as long as you can apply the
+    /// arithmetic operation on the underlying value type (e.g. you can't divide Strings)
+    /// then you will be able to write something like this: `ts3 = &ts1 + &ts2;`
+    /// 
+    /// The closure cannot have side effects (i.e. change) the inputs provided. This
+    /// is to ensure that the `TimeSeries` being operated on don't change in the process
+    /// of generating the next `TimeSeries`
+    /// 
+    /// ---
+    /// ### Example
+    /// ``` 
+    /// use timeseries::{TimeSeries, Timeline, DateRange, Period};
+    /// use time::{Date, Month};
+    /// 
+    /// // Create a timeline
+    /// let from = Date::from_calendar_date(2022, Month::January, 10).unwrap();
+    /// let to = Date::from_calendar_date(2023, Month::January, 10).unwrap();
+    /// let dr = DateRange::new(from, to);
+    /// let tl = Timeline::new(dr, Period::Quarter);
+    /// 
+    /// // Create two timeseries
+    /// let v1 = vec![1, 2, 3, 4];
+    /// let ts1 = TimeSeries::new(&tl, v1).unwrap();
+    /// let v2 = vec![5, 6, 7, 8];
+    /// let ts2 = TimeSeries::new(&tl, v2).unwrap();
+    /// 
+    /// // Write a generic function that can be pairwise applied to the elements of a TS and apply it
+    /// let op = |(&a, &b): (&i32, &i32)| -> i32 {
+    ///     if a < 3 {
+    ///         1
+    ///     } else {
+    ///         b + 1
+    ///     }
+    /// };
+    /// let ts3 = ts1.apply(&ts2, op).unwrap();
+    /// ```
+    pub fn apply<F>(&self, other: &TimeSeries<'a, T>, func: F) -> Result<TimeSeries<'a, T>, &str>
+        where F: FnMut((&T, &T)) -> T,
+              T: Copy
+    {
+        if self.timeline != other.timeline { return Err("Timelines do not match. Ensure a common timeline is being used"); }
+        let data = self.values.iter()
+            .zip(other.values.iter())
+            .map(func)
+            .collect();
+        // Went with unwrap here as a TimeSeries created in these conditions should always be OK
+        Ok(TimeSeries::new(self.timeline, data).unwrap())
+    }
+
     // TODO: implement other ways of creating a TS object:
     //  * just provide some values and then pad out to full timeline
+
+    // TODO: provide a means to have a generic calc on more than a pair of TS objects
+    //  current implementation is strictly limited to two operations
 
     // TODO: implement way to add values into an existing TS, maybe by providing a (Date, T) tuple
 
     // TODO: be able to cast the values vector to other types, inside a new TS
-
-    // TODO: implement a way of combining two TS with the addition of user provided closure
 
     // TODO: implement getters
     //  * get single value at date
     //  * get slice of the underlying TS for a sub-date rate
 
     // TODO: implement a way of building corkscrews with multiple operations
+
+    // TODO: implement a shift method so that operations can be done on time series objects that reference different time periods
+    //  all combination methods currently offered are strictly limited to looking across isolated time periods
+    //  need to think carefully about if this will expose any circularity issues
 
 }
 
@@ -234,6 +292,77 @@ mod tests {
         assert_eq!(ts_i.values, vec![0, 0, 0, 0]);
         let ts_f = TimeSeries::empty_f(&tl);
         assert_eq!(ts_f.values, vec![0.0, 0.0, 0.0, 0.0]);
+
+    }
+
+    #[test]
+    fn gen_func_timeseries() {
+        
+        // Create a timeline
+        let from = Date::from_calendar_date(2022, Month::January, 10).unwrap();
+        let to = Date::from_calendar_date(2023, Month::January, 10).unwrap();
+        let dr = DateRange::new(from, to);
+        let tl = Timeline::new(dr, Period::Quarter);
+
+        // Create two timeseries
+        let v1 = vec![1, 2, 3, 4];
+        let ts1 = TimeSeries::new(&tl, v1).unwrap();
+        let v2 = vec![5, 6, 7, 8];
+        let ts2 = TimeSeries::new(&tl, v2).unwrap();
+
+        // Write a generic function that can be pairwise applied to the elements of a TS and check OK
+        let op = |(&a, &b): (&i32, &i32)| -> i32 {
+            if a < 3 {
+                1
+            } else {
+                b + 1
+            }
+        };
+        let ts3 = ts1.apply(&ts2, op);
+        assert!(ts3.is_ok());
+
+        // Check values in added TS
+        let ts3 = ts3.unwrap();
+        assert_eq!(ts3.values, vec![1, 1, 8, 9]);
+
+        // Check adding TS with different timeline is not OK
+        let tl2 = Timeline::new(dr, Period::Year);
+        let v4 = vec![1];
+        let ts4 = TimeSeries::new(&tl2, v4).unwrap();
+        let ts5 = ts4.apply(&ts1, op);
+        assert!(ts5.is_err());
+
+        // Check adding TS with cloned timeline is OK
+        let tl3 = tl.clone();
+        let v6 = vec![1, 5, 8, 13];
+        let ts6 = TimeSeries::new(&tl3, v6).unwrap();
+        let ts7 = ts1.apply(&ts6, op);
+        assert!(ts7.is_ok());
+
+        // Check adding negative numbers and zero
+        let v8 = vec![-1, -2, 0, -100];
+        let ts8 = TimeSeries::new(&tl, v8).unwrap();
+        let ts9 = ts1.apply(&ts8, op);
+        assert!(ts9.is_ok());
+        let ts9 = ts9.unwrap();
+        assert_eq!(ts9.values, vec![1, 1, 1, -99]);
+
+        // Check adding floats
+        let v10 = vec![1.2, 1000.6, 0.0001, 3.0];
+        let v11 = vec![2.8, 0.0, 4.5, -0.5];
+        let op2 = |(&a, &b): (&f64, &f64)| -> f64 {
+            if a < 3.0 {
+                1.0
+            } else {
+                b + 1.0
+            }
+        };
+        let ts10 = TimeSeries::new(&tl, v10).unwrap();
+        let ts11 = TimeSeries::new(&tl, v11).unwrap();
+        let ts12 = ts10.apply(&ts11, op2);
+        assert!(ts12.is_ok());
+        let ts12 = ts12.unwrap();
+        assert_eq!(ts12.values, vec![1.0, 1.0, 1.0, 0.5]);
 
     }
 
