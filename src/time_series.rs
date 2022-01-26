@@ -1,4 +1,4 @@
-use crate::timeline::TimeLine;
+use crate::timeline::Timeline;
 use std::ops::{Add, Sub, Mul, Div, Rem};
 
 /// # TimeSeries
@@ -32,7 +32,7 @@ use std::ops::{Add, Sub, Mul, Div, Rem};
 /// the addition call
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TimeSeries<'a, T> {
-    pub(crate) timeline: &'a TimeLine,
+    pub(crate) timeline: &'a Timeline,
     values: Vec<T>,
 }
 
@@ -42,7 +42,7 @@ impl<'a, T> TimeSeries<'a, T> {
     /// 
     /// This method will throw an error if the length of the timeline provided and the
     /// length of the value vector do not match
-    pub fn new(timeline: &'a TimeLine, values: Vec<T>) -> Result<Self, &'static str> {
+    pub fn new(timeline: &'a Timeline, values: Vec<T>) -> Result<Self, &'static str> {
         match i32::try_from(values.len()) {
             Ok(l) => {
                 if l != timeline.len { return Err("Values do not match the timeline"); }
@@ -77,7 +77,7 @@ impl<'a, T> TimeSeries<'a, T> {
 impl<'a> TimeSeries<'a, i32> {
     
     /// For a given timline, create a TimeSeries of 32-bit integers, all with value 0
-    pub fn empty_i(timeline: &'a TimeLine) -> TimeSeries<'a, i32> {
+    pub fn empty_i(timeline: &'a Timeline) -> TimeSeries<'a, i32> {
         let values = vec![0; timeline.len as usize];
         TimeSeries { timeline, values }
     }
@@ -86,7 +86,7 @@ impl<'a> TimeSeries<'a, i32> {
 impl<'a> TimeSeries<'a, f64> {
     
     /// For a given timline, create a TimeSeries of 64-bit floats, all with value 0
-    pub fn empty_f(timeline: &'a TimeLine) -> TimeSeries<'a, f64> {
+    pub fn empty_f(timeline: &'a Timeline) -> TimeSeries<'a, f64> {
         let values = vec![0.0; timeline.len as usize];
         TimeSeries { timeline, values }
     }
@@ -190,7 +190,7 @@ mod tests {
         let from = Date::from_calendar_date(2022, Month::January, 10).unwrap();
         let to = Date::from_calendar_date(2023, Month::January, 10).unwrap();
         let dr = DateRange::new(from, to);
-        let tl = TimeLine::new(dr, Period::Quarter);
+        let tl = Timeline::new(dr, Period::Quarter);
 
         // Create timeseries, check ok
         let v1 = vec![1, 2, 3, 4];
@@ -227,7 +227,7 @@ mod tests {
         let from = Date::from_calendar_date(2022, Month::January, 10).unwrap();
         let to = Date::from_calendar_date(2023, Month::January, 10).unwrap();
         let dr = DateRange::new(from, to);
-        let tl = TimeLine::new(dr, Period::Quarter);
+        let tl = Timeline::new(dr, Period::Quarter);
 
         // Create float and integer ts, check OK
         let ts_i = TimeSeries::empty_i(&tl);
@@ -244,7 +244,7 @@ mod tests {
         let from = Date::from_calendar_date(2022, Month::January, 10).unwrap();
         let to = Date::from_calendar_date(2023, Month::January, 10).unwrap();
         let dr = DateRange::new(from, to);
-        let tl = TimeLine::new(dr, Period::Quarter);
+        let tl = Timeline::new(dr, Period::Quarter);
 
         // Create two timeseries
         let v1 = vec![1, 2, 3, 4];
@@ -261,7 +261,7 @@ mod tests {
         assert_eq!(ts3.values, vec![6, 8, 10, 12]);
 
         // Check adding TS with different timeline is not OK
-        let tl2 = TimeLine::new(dr, Period::Year);
+        let tl2 = Timeline::new(dr, Period::Year);
         let v4 = vec![1];
         let ts4 = TimeSeries::new(&tl2, v4).unwrap();
         let ts5 = &ts4 + &ts1;
@@ -301,7 +301,7 @@ mod tests {
         let from = Date::from_calendar_date(2022, Month::January, 10).unwrap();
         let to = Date::from_calendar_date(2023, Month::January, 10).unwrap();
         let dr = DateRange::new(from, to);
-        let tl = TimeLine::new(dr, Period::Quarter);
+        let tl = Timeline::new(dr, Period::Quarter);
 
         // Create two timeseries
         let v1 = vec![1, 2, 3, 4];
@@ -318,7 +318,7 @@ mod tests {
         assert_eq!(ts3.values, vec![4, 4, 4, 4]);
 
         // Check subtracting TS with different timeline is not OK
-        let tl2 = TimeLine::new(dr, Period::Year);
+        let tl2 = Timeline::new(dr, Period::Year);
         let v4 = vec![1];
         let ts4 = TimeSeries::new(&tl2, v4).unwrap();
         let ts5 = &ts4 - &ts1;
@@ -361,7 +361,7 @@ mod tests {
         let from = Date::from_calendar_date(2022, Month::January, 10).unwrap();
         let to = Date::from_calendar_date(2023, Month::January, 10).unwrap();
         let dr = DateRange::new(from, to);
-        let tl = TimeLine::new(dr, Period::Quarter);
+        let tl = Timeline::new(dr, Period::Quarter);
 
         // Create two timeseries
         let v1 = vec![1, 2, 3, 4];
@@ -378,7 +378,7 @@ mod tests {
         assert_eq!(ts3.values, vec![5, 12, 21, 32]);
 
         // Check multiplying TS with different timeline is not OK
-        let tl2 = TimeLine::new(dr, Period::Year);
+        let tl2 = Timeline::new(dr, Period::Year);
         let v4 = vec![1];
         let ts4 = TimeSeries::new(&tl2, v4).unwrap();
         let ts5 = &ts4 * &ts1;
@@ -421,7 +421,7 @@ mod tests {
         let from = Date::from_calendar_date(2022, Month::January, 10).unwrap();
         let to = Date::from_calendar_date(2023, Month::January, 10).unwrap();
         let dr = DateRange::new(from, to);
-        let tl = TimeLine::new(dr, Period::Quarter);
+        let tl = Timeline::new(dr, Period::Quarter);
 
         // Create two timeseries
         let v1 = vec![1, 2, 3, 4];
@@ -438,7 +438,7 @@ mod tests {
         assert_eq!(ts3.values, vec![5, 3, 2, 2]);
 
         // Check dividing TS with different timeline is not OK
-        let tl2 = TimeLine::new(dr, Period::Year);
+        let tl2 = Timeline::new(dr, Period::Year);
         let v4 = vec![1];
         let ts4 = TimeSeries::new(&tl2, v4).unwrap();
         let ts5 = &ts4 / &ts1;
@@ -481,7 +481,7 @@ mod tests {
         let from = Date::from_calendar_date(2022, Month::January, 10).unwrap();
         let to = Date::from_calendar_date(2023, Month::January, 10).unwrap();
         let dr = DateRange::new(from, to);
-        let tl = TimeLine::new(dr, Period::Quarter);
+        let tl = Timeline::new(dr, Period::Quarter);
 
         // Create two timeseries
         let v1 = vec![1, 2, 3, 4];
@@ -498,7 +498,7 @@ mod tests {
         assert_eq!(ts3.values, vec![0, 0, 1, 3]);
 
         // Check mod TS with different timeline is not OK
-        let tl2 = TimeLine::new(dr, Period::Year);
+        let tl2 = Timeline::new(dr, Period::Year);
         let v4 = vec![1];
         let ts4 = TimeSeries::new(&tl2, v4).unwrap();
         let ts5 = &ts4 % &ts1;

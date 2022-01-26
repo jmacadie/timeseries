@@ -12,12 +12,11 @@
 //! This library builds upon the [`time`][#time] library
 //! 
 //! [#time]: https://docs.rs/time/0.3.6/time/
-mod duration_ext;
 mod timeline;
 mod date_range;
 mod period;
 mod time_series;
 
 pub use crate::date_range::DateRange;
-pub use crate::timeline::TimeLine;
+pub use crate::timeline::Timeline;
 pub use crate::period::Period;

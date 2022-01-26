@@ -18,19 +18,19 @@ use std::cmp;
 /// and 2 days, with periodicity of monthly will comprise 4 time periods. The first
 /// three periods will be whole months and the final one will be 2 days
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct TimeLine {
+pub struct Timeline {
     pub(crate)range: DateRange,
     periodicity: Period,
     current_date: Date,
     pub(crate) len: i32,
 }
 
-impl TimeLine {
+impl Timeline {
     
     pub fn new(range: DateRange, periodicity: Period) -> Self {
         let curr = range.from().clone();
-        let len = TimeLine::range_len(range, periodicity);
-        TimeLine {
+        let len = Timeline::range_len(range, periodicity);
+        Timeline {
             range,
             periodicity,
             current_date: curr,
@@ -92,19 +92,19 @@ impl TimeLine {
     //  * a getter for a time slice (maybe? need to think of the use case)
     
     // TODO: even needed?
-    pub fn merge(self, other: TimeLine) -> Result<Option<TimeLine>, &'static str> {
+    pub fn merge(self, other: Timeline) -> Result<Option<Timeline>, &'static str> {
         if self == other { return Ok(None); }
         if self.periodicity != other.periodicity { return Err("Time periods do match"); }
         Ok(
             Some(
-                TimeLine::new(self.range.union(&other.range), self.periodicity.clone())
+                Timeline::new(self.range.union(&other.range), self.periodicity.clone())
             )
         )
     }
 
 }
 
-impl Iterator for TimeLine {
+impl Iterator for Timeline {
     type Item = DateRange;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -186,7 +186,7 @@ mod tests {
         let from = Date::from_calendar_date(2022, Month::January, 10).unwrap();
         let to = Date::from_calendar_date(2022, Month::December, 10).unwrap();
         let dr = DateRange::new(from, to);
-        let tl = TimeLine::new(dr, Period::Quarter);
+        let tl = Timeline::new(dr, Period::Quarter);
         let mut i = 0;
         for test_range in tl {
             assert_eq!(test_range.to().year(), 2022);
