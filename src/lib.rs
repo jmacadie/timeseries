@@ -14,6 +14,7 @@ mod timeline;
 mod date_range;
 mod period;
 mod time_series;
+mod duration;
 
 pub use crate::date_range::DateRange;
 pub use crate::timeline::Timeline;
