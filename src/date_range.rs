@@ -3,14 +3,14 @@ use std::cmp;
 
 /// # DateRange
 /// 
-/// Simply comprises a pair of `time::Date` objects that represent
+/// Simply comprises a pair of [`time::Date`] objects that represent
 /// the start and end of a date range
 /// 
 /// ---
 /// ### To be implemented...
 /// This object allows us to implement a `date_diff` function that is
 /// aware of intervals of a month and upwards, which is missing from
-/// `time`
+/// [`time`]
 /// 
 /// Also by using the alternate constructor that takes a start date
 /// and \[chunks of period, defined somehow\] we will effectively be

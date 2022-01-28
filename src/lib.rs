@@ -9,9 +9,7 @@
 //! intended to provide a way of creating and running those types of
 //! model in Rust
 //! 
-//! This library builds upon the [`time`][#time] library
-//! 
-//! [#time]: https://docs.rs/time/0.3.6/time/
+//! This library builds upon the [`time`] library
 mod timeline;
 mod date_range;
 mod period;

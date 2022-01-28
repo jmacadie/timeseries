@@ -65,9 +65,9 @@ impl<'a, T> TimeSeries<'a, T> {
     /// arithmetic operation on the underlying value type (e.g. you can't divide Strings)
     /// then you will be able to write something like this: `ts3 = &ts1 + &ts2;`
     /// 
-    /// The closure cannot have side effects (i.e. change) the inputs provided. This
-    /// is to ensure that the `TimeSeries` being operated on don't change in the process
-    /// of generating the next `TimeSeries`
+    /// The closure cannot have side effects (i.e. change the inputs provided). This
+    /// is to ensure that the `TimeSeries` being operated on, don't change in the process
+    /// of generating a new `TimeSeries`
     /// 
     /// ---
     /// ### Example
