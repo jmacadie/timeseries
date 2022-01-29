@@ -1,7 +1,6 @@
 use time::{Date, Month, util::{days_in_year, days_in_year_month}};
 use std::ops::{Add, Sub};
 
-
 /// # Duration
 /// 
 /// A struct to hold & work with a duration interval that spans days,
@@ -203,8 +202,6 @@ impl Duration {
     }
 
     fn add(dur: Duration, date: Date) -> Result<Date, &'static str> {
-        println!("Start new add");
-        println!("--------------");
         // Calculate the approx size of the duration
         let size = dur.years as f64 * 365.25
                         + dur.months as f64 * 30.5
@@ -225,7 +222,6 @@ impl Duration {
         // Assign the internal date variable - add days if that's what we're doing
         let mut temp: Date;
         if days_first {
-            println!("Adding days first");
             temp = Self::add_days(date, dur.days);
         } else {
             temp = date;
@@ -238,7 +234,6 @@ impl Duration {
 
         // Deal with month overflows
         // Months are on the range 1..13, so need to shift by 1 in & out to get logic for end points right
-        println!("{} {} {} {}", day, month, year, days_first);
         month -= 1;
         year += month / 12;
         month %= 12;
@@ -247,7 +242,6 @@ impl Duration {
             year -= 1;
         }
         month += 1;
-        println!("{} {} {} {}", day, month, year, days_first);
         let month = Month::try_from(month as u8).unwrap();
 
         // Try to create the intermediate date
@@ -255,7 +249,6 @@ impl Duration {
             Ok(d) => d,
             Err(_) => {
                 if !first_pass { return Err("Cannot add this duration to this date"); }
-                println!("Bad intermediate");
                 let d = Self::add_once(dur, date, !days_first, false)?;
                 return Ok(d);
             }
@@ -263,7 +256,6 @@ impl Duration {
 
         // Add days as required
         if !days_first {
-            println!("Adding days second");
             temp = Self::add_days(temp, dur.days);
         }
 
