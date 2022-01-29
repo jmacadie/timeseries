@@ -605,4 +605,56 @@ mod tests {
 
     }
 
+    #[test]
+    fn add_and_sub_duration() {
+
+        // Test that adding and subtracting the same interval always gets back to the same start date
+        //
+        // Can't test this as differnt dates plus the same interval can get to the same date:
+        // e.g. 30-Jul + (2 months, 10 days) = 10-Oct -> months get added first
+        //      31-Jul + (2 months, 10 days) = 10-Oct -> can't add months first, as 31st Sep doesn't exist, so add days first
+        // ... so
+        //      10-Oct - (2 months, 10 days) = ???
+        //
+        // If you add days first by default, you'll get the same issue for other dates:
+        // e.g. 27-Jul + (2 months, 5 days) = 1-Oct -> days get added first
+        //      26-Jul + (2 months, 5 days) = 1-Oct -> can't add days first, as 31st Sep doesn't exist, so add months first
+        // ... so
+        //      1-Oct - (2 months, 5 days) = ???
+        //
+        // An alternate solution would be to say that certain durations cannot be added to certain dates
+        // From a design standpoint I don't like that as I feel it more important to always be able to add a duraion
+        // to a date. It's not obvious to the end user why 2 months, 5 days cannot be added to 26-Jul (if we have
+        // picked days first as our operator precedence).
+        //
+        // Another option would be to say that forward durations are deterministic (i.e. always give rise to one output
+        // date) but that backward durations could evaluate to a range of dates. This could work and might be
+        // quite elegant but I need to give further thought to the idea. It will probably complicate the interface as
+        // additions of negative durations are really subtractions, so the addition operator will need to be able to 
+        // return an array of output dates as well. Perhaps create a new struct to wrap this output object type?
+
+        /*let mut d1: Date;
+        let mut d2: Date;
+        let mut d3: Date;
+        let mut dur: Duration;
+
+        d1 = Date::from_calendar_date(2022, Month::April, 1).unwrap();
+        dur = Duration::new(5, 2, 0);
+        d2 = d1 + dur;
+        d3 = d2 - dur;
+        assert_eq!(d1, d3);
+
+        for _ in 0..1000 {
+            d1 = match d1.next_day() {
+                Some(d) => d,
+                None => d2,
+            };            
+            d2 = d1 + dur;
+            d3 = d2 - dur;
+            println!("{} {} {}", d1, d2, d3);
+            assert_eq!(d1, d3);
+        }*/
+
+    }
+
 }
