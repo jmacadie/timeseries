@@ -201,7 +201,7 @@ impl Duration {
         Duration { days, months, years }
     }
 
-    fn add(dur: Duration, date: Date) -> Result<Date, &'static str> {
+    fn add(dur: Duration, date: Date) -> Date {
         // Calculate the approx size of the duration
         let size = dur.years as f64 * 365.25
                         + dur.months as f64 * 30.5
@@ -210,14 +210,14 @@ impl Duration {
         // Add days first for negative durations & last for positive
         let d: Date;
         if size > 0_f64 {
-            d = Self::add_once(dur, date, false, true)?; 
+            d = Self::add_once(dur, date, false, true); 
         } else {
-            d = Self::add_once(dur, date, true, true)?; 
+            d = Self::add_once(dur, date, true, true); 
         }
-        Ok(d)
+        d
     }
 
-    fn add_once(dur: Duration, date: Date, days_first: bool, first_pass: bool) -> Result<Date, &'static str> {
+    fn add_once(dur: Duration, date: Date, days_first: bool, first_pass: bool) -> Date {
         
         // Assign the internal date variable - add days if that's what we're doing
         let mut temp: Date;
@@ -248,9 +248,14 @@ impl Duration {
         temp = match Date::from_calendar_date(year, month, day) {
             Ok(d) => d,
             Err(_) => {
-                if !first_pass { return Err("Cannot add this duration to this date"); }
-                let d = Self::add_once(dur, date, !days_first, false)?;
-                return Ok(d);
+                if !first_pass { 
+                    // If all else fails then take the day at the end of the month being tried
+                    let d= Date::from_calendar_date(year, month, days_in_year_month(year, month)).unwrap();
+                    return d;
+                    //return Err("Cannot add this duration to this date"); }
+                }
+                let d = Self::add_once(dur, date, !days_first, false);
+                return d;
             }
         };
 
@@ -258,8 +263,7 @@ impl Duration {
         if !days_first {
             temp = Self::add_days(temp, dur.days);
         }
-
-        Ok(temp)
+        temp
     }
     
     fn add_days(date: Date, days: i32) -> Date {
@@ -282,18 +286,18 @@ impl Add for Duration {
 }
 
 impl Add<Date> for Duration {
-    type Output = Result<Date, &'static str>;
+    type Output = Date;
 
-    fn add(self, rhs: Date) -> Result<Date, &'static str> {
+    fn add(self, rhs: Date) -> Date {
         Self::add(self, rhs)
     }
 
 }
 
 impl Add<Duration> for Date {
-    type Output = Result<Date, &'static str>;
+    type Output = Date;
 
-    fn add(self, rhs: Duration) -> Result<Date, &'static str> {
+    fn add(self, rhs: Duration) -> Date {
         Duration::add(rhs, self)
     }
 
@@ -312,9 +316,9 @@ impl Sub for Duration {
 }
 
 impl Sub<Duration> for Date {
-    type Output = Result<Date, &'static str>;
+    type Output = Date;
 
-    fn sub(self, rhs: Duration) -> Result<Date, &'static str> {
+    fn sub(self, rhs: Duration) -> Date {
         Duration::add(rhs.invert(), self)
     }
 
@@ -482,52 +486,48 @@ mod tests {
         let mut duration = Duration::new(1, 2, 3);
 
         // Test the addition is ok
-        let d = date + duration;
-        assert!(d.is_ok());
-        
-        // Check the result of the addition
-        let mut d = d.unwrap();
+        let mut d = date + duration;
         assert_eq!((d.year(), d.month() as u8, d.day()), (2025, 3, 11));
 
         // Add a negative duration
         duration = Duration::new(-1, 0, 0);
-        d = (date + duration).unwrap();
+        d = date + duration;
         assert_eq!((d.year(), d.month() as u8, d.day()), (2022, 1, 9));
 
         // Add a negative wrap over year end
         duration = Duration::new(-10, 0, -1);
-        d = (date + duration).unwrap();
+        d = date + duration;
         assert_eq!((d.year(), d.month() as u8, d.day()), (2020, 12, 31));
 
         // Add a negative wrap over year end, with possible bad intermediate date
         duration = Duration::new(-10, -1, -1);
-        d = (date + duration).unwrap();
+        d = date + duration;
         assert_eq!((d.year(), d.month() as u8, d.day()), (2020, 11, 30));
 
         // Try a day overflowing add
         duration = Duration::new(50, 0, 0);
-        d = (date + duration).unwrap();
+        d = date + duration;
         assert_eq!((d.year(), d.month() as u8, d.day()), (2022, 3, 1));
 
         // Try a month overflowing add
         duration = Duration::new(0, 30, 0);
-        d = (date + duration).unwrap();
+        d = date + duration;
         assert_eq!((d.year(), d.month() as u8, d.day()), (2024, 7, 10));
 
         // Try a day overflowing add of negative number
         duration = Duration::new(-50, 0, 0);
-        d = (date + duration).unwrap();
+        d = date + duration;
         assert_eq!((d.year(), d.month() as u8, d.day()), (2021, 11, 21));
 
         // Try a month overflowing add of negative number
         duration = Duration::new(0, -30, 0);
-        d = (date + duration).unwrap();
+        d = date + duration;
         assert_eq!((d.year(), d.month() as u8, d.day()), (2019, 7, 10));
 
         // Try a day overflowing add + leap year
         duration = Duration::new(50, 0, 0);
         date = Date::from_calendar_date(2024, Month::January, 10).unwrap();
-        d = (date + duration).unwrap();
+        d = date + duration;
         assert_eq!((d.year(), d.month() as u8, d.day()), (2024, 2, 29));
 
     }
@@ -540,16 +540,12 @@ mod tests {
         let mut duration = Duration::new(1, 2, 3);
 
         // Test the addition is ok
-        let d = duration + date;
-        assert!(d.is_ok());
-        
-        // Check the result of the addition
-        let mut d = d.unwrap();
+        let mut d = duration + date;
         assert_eq!((d.year(), d.month() as u8, d.day()), (2025, 3, 11));
 
         // Add a negative duration
         duration = Duration::new(-1, 0, 0);
-        d = (duration + date).unwrap();
+        d = duration + date;
         assert_eq!((d.year(), d.month() as u8, d.day()), (2022, 1, 9));
     }
 
@@ -561,54 +557,50 @@ mod tests {
         let mut duration = Duration::new(1, 2, 3);
 
         // Test the subtraction is ok
-        let d = date - duration;
-        assert!(d.is_ok());
-        
-        // Check the result of the subtraction
-        let mut d = d.unwrap();
+        let mut d = date - duration;
         assert_eq!((d.year(), d.month() as u8, d.day()), (2019, 10, 9));
 
         // Subtraction a negative duration
         duration = Duration::new(-1, 0, 0);
-        d = (date - duration).unwrap();
+        d = date - duration;
         assert_eq!((d.year(), d.month() as u8, d.day()), (2022, 12, 11));
 
         // Subtraction a negative wrap over year end
         duration = Duration::new(-25, 0, -1);
-        d = (date - duration).unwrap();
+        d = date - duration;
         assert_eq!((d.year(), d.month() as u8, d.day()), (2024, 1, 4));
 
         // Subtraction a negative wrap over year end, with possible bad intermediate date
         date = Date::from_calendar_date(2022, Month::December, 31).unwrap();
         duration = Duration::new(-10, -2, -1);
-        d = (date - duration).unwrap();
+        d = date - duration;
         assert_eq!((d.year(), d.month() as u8, d.day()), (2024, 3, 10));
 
         // Try a day overflowing subtraction
         date = Date::from_calendar_date(2022, Month::December, 10).unwrap();
         duration = Duration::new(50, 0, 0);
-        d = (date - duration).unwrap();
+        d = date - duration;
         assert_eq!((d.year(), d.month() as u8, d.day()), (2022, 10, 21));
 
         // Try a month overflowing subtraction
         duration = Duration::new(0, 30, 0);
-        d = (date - duration).unwrap();
+        d = date - duration;
         assert_eq!((d.year(), d.month() as u8, d.day()), (2020, 6, 10));
 
         // Try a day overflowing subtraction of negative number
         duration = Duration::new(-81, 0, 0);
-        d = (date - duration).unwrap();
+        d = date - duration;
         assert_eq!((d.year(), d.month() as u8, d.day()), (2023, 3, 1));
 
         // Try a month overflowing subtraction of negative number
         duration = Duration::new(0, -30, 0);
-        d = (date - duration).unwrap();
+        d = date - duration;
         assert_eq!((d.year(), d.month() as u8, d.day()), (2025, 6, 10));
 
         // Try a day overflowing subtraction + leap year
         duration = Duration::new(50, 0, 0);
         date = Date::from_calendar_date(2024, Month::March, 10).unwrap();
-        d = (date - duration).unwrap();
+        d = date - duration;
         assert_eq!((d.year(), d.month() as u8, d.day()), (2024, 1, 20));
 
     }
