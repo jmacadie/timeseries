@@ -15,8 +15,10 @@ mod date_range;
 mod period;
 mod time_series;
 mod duration;
+mod date_arithmetic_ouput;
 
 pub use crate::date_range::DateRange;
 pub use crate::timeline::Timeline;
 pub use crate::time_series::TimeSeries;
 pub use crate::period::Period;
+pub use crate::date_arithmetic_ouput::DateArithmeticOutput;

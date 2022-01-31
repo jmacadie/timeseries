@@ -57,7 +57,7 @@ impl Timeline {
             },
             Period::Month => {
                 diff = 12 * (range.to.year() - range.from.year());
-                // get the ordinal value of the  month out of the Month enum
+                // get the ordinal value of the month out of the Month enum
                 let m1 = range.to.month() as i32; 
                 let m2 = range.from.month() as i32;
                 diff += m1 - m2;
