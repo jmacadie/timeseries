@@ -1,5 +1,6 @@
 use time::Date;
 use std::convert::TryFrom;
+use core::fmt;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DateArithmeticOutput {
@@ -14,7 +15,7 @@ impl DateArithmeticOutput {
         Self { values, index: 0_u8 }
     }
 
-    pub fn add(&mut self, date: Date) -> () {
+    pub fn append(&mut self, date: Date) -> () {
         self.values.push(date);
     }
 
@@ -51,9 +52,20 @@ impl DateArithmeticOutput {
 
 }
 
+impl fmt::Display for DateArithmeticOutput {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut output = String::new();
+        for d in self.values.clone().iter() {
+            output.push_str(&format!("{}; ", d));
+        }
+        f.write_str(&output)
+    }
+}
+
 impl Iterator for DateArithmeticOutput {
     type Item = Date;
 
+    // TODO: Fix. This isn't working
     fn next(&mut self) -> Option<Self::Item> {
         let i = match u8::try_from(self.values.len()) {
             Ok(l) => l - 1,

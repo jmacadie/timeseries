@@ -2,6 +2,7 @@ use crate::DateArithmeticOutput;
 use time::{Date, Month, util::{days_in_year, days_in_year_month}};
 use std::ops::{Add, Sub};
 use std::cmp;
+use core::fmt;
 
 /// # Duration
 /// 
@@ -199,7 +200,7 @@ impl Duration {
         self.years
     }
 
-    // Inverts a duration by changing the sign on every part of the duration
+    /// Inverts a duration by changing the sign on every part of the duration
     fn invert(&self) -> Self {
         let days = -self.days;
         let months = -self.months;
@@ -217,7 +218,35 @@ impl Duration {
             days_first = true;
         }
         
-        let output = dur.add_once(date, days_first, true);
+        let mut output = dur.add_once(date, days_first, true);
+
+        // Add the other days that could result from the addition / subtraction
+        if dur.is_multiple_output(date) {
+
+            // Deal with days that could have multiplied because both routes give rise to 
+            // an invalid date, so the invalid date is truncated to month end
+            // Only ever happens at end of month
+            if Self::is_eom(date) {
+                let day = date.day() as i32 + cmp::max(dur.days,0) + 1;
+                let month;
+                let year;
+                match dur.add_ym(date) {
+                    (y, m) => { year = y; month = m; }
+                }
+                let lim = days_in_year_month(year, month) as i32 + cmp::min(dur.days,0) + 1;
+                for i in day..lim { // N.B. might never loop here & that's OK
+                    let temp = i as u8;
+                    output.append(Date::from_calendar_date(year, month, temp).unwrap());
+                }
+            }
+
+            // Check for date by adding with the days order reversed
+            let d = dur.add_once(date, !days_first, false).primary();
+            if !output.contains(d) {
+                output.append(d);
+            }
+
+        }
         output
     }
 
@@ -254,24 +283,20 @@ impl Duration {
             temp = self.add_days(date);
             day_lim = 1 - self.days;
         }
-        self.multiple_output_inner(temp, day_lim)
-    }
-    
-    fn multiple_output_inner(&self, date: Date, day_lim: i32) -> bool {
         
         let year: i32;
         let month: Month;
 
-        match self.add_ym(date) {
+        match self.add_ym(temp) {
             (y, m) => {
                 year = y;
                 month = m;
             }
         }
         let to = days_in_year_month(year, month) as i32;
-        let from = days_in_year_month(date.year(), date.month()) as i32;
+        let from = days_in_year_month(temp.year(), temp.month()) as i32;
 
-        date.day() as i32 >
+        temp.day() as i32 >
             from
             - cmp::min(
                 cmp::max(to - from, 0),
@@ -394,6 +419,16 @@ impl Add<Duration> for Date {
 
 }
 
+impl Add<Duration> for DateArithmeticOutput {
+    type Output = DateArithmeticOutput;
+
+    fn add(self, rhs: Duration) -> DateArithmeticOutput {
+        // TODO: add up all the values not just the primary one
+        Duration::add_int(rhs, self.primary())
+    }
+
+}
+
 impl Sub for Duration {
     type Output = Self;
 
@@ -413,6 +448,44 @@ impl Sub<Duration> for Date {
         Duration::add_int(rhs.invert(), self)
     }
 
+}
+
+impl Sub<Duration> for DateArithmeticOutput {
+    type Output = DateArithmeticOutput;
+
+    fn sub(self, rhs: Duration) -> DateArithmeticOutput {
+        // TODO: add up all the values not just the primary one
+        Duration::add_int(rhs.invert(), self.primary())
+    }
+
+}
+
+impl fmt::Display for Duration {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut out = String::new();
+        if self.years == 1 {
+            out.push_str(&format!("1 year"));
+        } else if self.years != 0 {
+            out.push_str(&format!("{} years", self.years));
+        }
+        if out.len() > 0 && self.months != 0 {
+            out.push_str(", ");
+        }
+        if self.months == 1 {
+            out.push_str(&format!("1 month"));
+        } else if self.months != 0 {
+            out.push_str(&format!("{} months", self.months));
+        }
+        if out.len() > 0 && self.days != 0 {
+            out.push_str(", ");
+        }
+        if self.days == 1 {
+            out.push_str(&format!("1 day"));
+        } else if self.days != 0 {
+            out.push_str(&format!("{} days", self.days));
+        }
+        f.write_str(&out) 
+    }
 }
 
 #[cfg(test)]
@@ -726,9 +799,10 @@ mod tests {
 
         let mut d1: Date;
         let mut d2: Date;
-        let mut d3: Date;
+        let mut d3: DateArithmeticOutput;
         let mut dur: Duration;
         let mut test: bool;
+        let addition: bool = false;
 
         for day in 0..10 {
             println!("");
@@ -736,16 +810,24 @@ mod tests {
             println!("------");
             d1 = Date::from_calendar_date(2022, Month::January, 1).unwrap();
             dur = Duration::new(day, 1, 0);
-            for _ in 0..1500 {
+            for _ in 0..365 {
                 if let Some(d) = d1.next_day() { d1 = d; }
-                //d2 = (d1 - dur).primary();
-                //d3 = (d2 + dur).primary();
-                //test = dur.is_multiple_output(d2);
-                d2 = (d1 + dur).primary();
-                d3 = (d2 - dur).primary();
-                test = dur.invert().is_multiple_output(d2);
-                if d1 != d3 || test {
-                    println!("{} {} {} {}", d1, d2, d3, test);
+                //println!("{}", d1);
+                if addition {
+                    d2 = (d1 - dur).primary();
+                    d3 = d2 + dur;
+                    test = dur.is_multiple_output(d2);
+                } else {
+                    d2 = (d1 + dur).primary();
+                    d3 = d2 - dur;
+                    test = dur.invert().is_multiple_output(d2);
+                }
+                if d1 != d3.primary() || test {
+                    if addition {
+                        println!("{}: {} plus {} => {}", d1, d2, dur, d3);
+                    } else {
+                        println!("{}: {} minus {} => {}", d1, d2, dur, d3);
+                    }
                 }
             }
         }
