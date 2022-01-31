@@ -188,6 +188,15 @@ impl Duration {
         (months, days)
     }
 
+    /// Function to convert an overflowing duration created by a new
+    /// call into a normalise days, months and years duration.
+    /// By normalised it is meant that days are in the range 0..32 &
+    /// months are in the range  0..13
+    pub fn normalise(&self, date: Date) -> Self {
+        let to = (date + self).primary();
+        Self::from_dates(date, to)
+    }
+
     pub fn days(&self) -> i32 {
         self.days
     }
@@ -415,6 +424,15 @@ impl Add<Duration> for Date {
 
     fn add(self, rhs: Duration) -> DateArithmeticOutput {
         Duration::add_int(rhs, self)
+    }
+
+}
+
+impl Add<&Duration> for Date {
+    type Output = DateArithmeticOutput;
+
+    fn add(self, rhs: &Duration) -> DateArithmeticOutput {
+        Duration::add_int(*rhs, self)
     }
 
 }
@@ -770,49 +788,71 @@ mod tests {
     }
 
     #[test]
+    fn all_add_results() {
+
+        let mut d: Date;
+        let mut t: Date;
+        let mut dur: Duration;
+        let mut res: DateArithmeticOutput;
+
+        // TODO: write some more. Just put in a particular edge case for now
+
+        // Crazy but true
+        d = Date::from_calendar_date(2022, Month::February, 28).unwrap();
+        dur = Duration::new(2,3,0);
+        res = d + dur;
+        t = Date::from_calendar_date(2022, Month::May, 29).unwrap();
+        assert!(!res.contains(t));
+        t = Date::from_calendar_date(2022, Month::May, 30).unwrap();
+        assert!(res.contains(t));
+        t = Date::from_calendar_date(2022, Month::May, 31).unwrap();
+        assert!(res.contains(t));
+        t = Date::from_calendar_date(2022, Month::June, 1).unwrap();
+        assert!(!res.contains(t));
+        t = Date::from_calendar_date(2022, Month::June, 2).unwrap();
+        assert!(res.contains(t));
+        t = Date::from_calendar_date(2022, Month::June, 3).unwrap();
+        assert!(!res.contains(t));
+
+        // Crazy but true
+        d = Date::from_calendar_date(2022, Month::February, 27).unwrap();
+        dur = Duration::new(2,3,0);
+        res = d + dur;
+        t = Date::from_calendar_date(2022, Month::May, 29).unwrap();
+        assert!(res.contains(t));
+        t = Date::from_calendar_date(2022, Month::May, 30).unwrap();
+        assert!(!res.contains(t));
+        t = Date::from_calendar_date(2022, Month::May, 31).unwrap();
+        assert!(!res.contains(t));
+        t = Date::from_calendar_date(2022, Month::June, 1).unwrap();
+        assert!(res.contains(t));
+        t = Date::from_calendar_date(2022, Month::June, 2).unwrap();
+        assert!(!res.contains(t));
+        t = Date::from_calendar_date(2022, Month::June, 3).unwrap();
+        assert!(!res.contains(t));
+
+    }
+
+    #[test]
     fn add_and_sub_duration() {
 
         // Test that adding and subtracting the same interval always gets back to the same start date
-        //
-        // Can't test this as differnt dates plus the same interval can get to the same date:
-        // e.g. 30-Jul + (2 months, 10 days) = 10-Oct -> months get added first
-        //      31-Jul + (2 months, 10 days) = 10-Oct -> can't add months first, as 31st Sep doesn't exist, so add days first
-        // ... so
-        //      10-Oct - (2 months, 10 days) = ???
-        //
-        // If you add days first by default, you'll get the same issue for other dates:
-        // e.g. 27-Jul + (2 months, 5 days) = 1-Oct -> days get added first
-        //      26-Jul + (2 months, 5 days) = 1-Oct -> can't add days first, as 31st Sep doesn't exist, so add months first
-        // ... so
-        //      1-Oct - (2 months, 5 days) = ???
-        //
-        // An alternate solution would be to say that certain durations cannot be added to certain dates
-        // From a design standpoint I don't like that as I feel it more important to always be able to add a duraion
-        // to a date. It's not obvious to the end user why 2 months, 5 days cannot be added to 26-Jul (if we have
-        // picked days first as our operator precedence).
-        //
-        // Another option would be to say that forward durations are deterministic (i.e. always give rise to one output
-        // date) but that backward durations could evaluate to a range of dates. This could work and might be
-        // quite elegant but I need to give further thought to the idea. It will probably complicate the interface as
-        // additions of negative durations are really subtractions, so the addition operator will need to be able to 
-        // return an array of output dates as well. Perhaps create a new struct to wrap this output object type?
 
-        let mut d1: Date;
+        /*let mut d1: Date;
         let mut d2: Date;
         let mut d3: DateArithmeticOutput;
         let mut dur: Duration;
         let mut test: bool;
-        let addition: bool = false;
+        let addition: bool = true;
 
         for day in 0..10 {
             println!("");
             println!("Day {}", day);
             println!("------");
             d1 = Date::from_calendar_date(2022, Month::January, 1).unwrap();
-            dur = Duration::new(day, 1, 0);
+            dur = Duration::new(day, 3, 0);
             for _ in 0..365 {
                 if let Some(d) = d1.next_day() { d1 = d; }
-                //println!("{}", d1);
                 if addition {
                     d2 = (d1 - dur).primary();
                     d3 = d2 + dur;
@@ -831,6 +871,39 @@ mod tests {
                 }
             }
         }
-        assert_eq!(1, 2); 
+        assert_eq!(1, 2);*/
+
+        let mut d1: Date;
+        let mut d2: DateArithmeticOutput;
+        let mut dur: Duration;
+
+        for month in 0..13 {
+            for day in 0..10 {
+                d1 = Date::from_calendar_date(2022, Month::January, 1).unwrap();
+                dur = Duration::new(day, month, 0);
+                for _ in 0..1500 { // 4 years - will capture leap years
+                    if let Some(d) = d1.next_day() { d1 = d; }
+                    d2 = d1 - dur + dur;
+                    assert!(d2.contains(d1));
+                    d2 = d1 + dur - dur;
+                    assert!(d2.contains(d1));
+                }
+            }
+        }
     }
+
+    #[test]
+    fn normalise() {
+        let dur = Duration::new(365, 0, 0);
+        let mut tar = Duration::new(30, 11, 0);
+        let mut date = Date::from_calendar_date(2024, Month::February, 25).unwrap();
+        let mut res = dur.normalise(date);
+        assert_eq!(res, tar);
+        
+        tar = Duration::new(0, 0, 1);
+        date = Date::from_calendar_date(2022, Month::February, 25).unwrap();
+        res = dur.normalise(date);
+        assert_eq!(res, tar);
+    }
+
 }

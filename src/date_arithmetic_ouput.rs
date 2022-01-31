@@ -67,16 +67,15 @@ impl Iterator for DateArithmeticOutput {
 
     // TODO: Fix. This isn't working
     fn next(&mut self) -> Option<Self::Item> {
-        let i = match u8::try_from(self.values.len()) {
-            Ok(l) => l - 1,
-            Err(_) => { return None; },
+        let max = match self.len() {
+            Some(l) => l - 1,
+            None => { return None; },
         };
-        match self.index {
-            i => None,
-            _ => {
-                self.index += 1;
-                Some(self.values[(self.index - 1) as usize].clone())
-            }
+        if self.index >= max {
+            None
+        } else {
+            self.index += 1;
+            Some(self.values[(self.index - 1) as usize].clone())
         }
     }
 
