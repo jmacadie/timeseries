@@ -286,6 +286,10 @@ impl Duration {
     // endregion utility methods
 
     // region: addition
+    /// Root internal method for performing addition.
+    /// Called by the trait implementations which consider the 
+    /// various combinations of adding and subtracting Dates and
+    /// Durations
     fn add_int(dur: Duration, date: Date) -> DateArithmeticOutput {
 
         // Add days first for negative durations & last for positive
@@ -368,6 +372,8 @@ impl Duration {
         return date.day() == days_in_year_month(date.year(), date.month());
     }
 
+    /// Add years and months to a date, wrapping month overflows into 
+    /// additional years. Return a tuple of the resultant year and month
     fn add_ym(&self, date: Date) -> (i32, Month) {
 
         // Overflowing add on the year and month part
@@ -530,6 +536,7 @@ impl Sub<Duration> for DateArithmeticOutput {
 }
 // endregion trait implementations
 
+// region: formatting
 impl fmt::Display for Duration {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut out = String::new();
@@ -557,6 +564,7 @@ impl fmt::Display for Duration {
         f.write_str(&out) 
     }
 }
+// endregion formatting
 
 #[cfg(test)]
 mod tests {
