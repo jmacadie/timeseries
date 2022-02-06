@@ -7,53 +7,85 @@ use core::fmt;
 /// # Duration
 /// 
 /// A struct to hold & work with a duration interval that spans days,
-/// months and years. The days and months parts will be held for the 
+/// months and years. The days and months parts are intended to hold the 
 /// fractional parts that cannot be represented by a higher time period
 /// 
 /// Durations can be negative, like [`time::Duration`], but unlike
 /// [`core::time::Duration`]
 ///
-/// The days and months parts will be coerced into the correct fractional
-/// parts with any overflowing amounts stored in the next higer period part:
-/// * days will be held in the range -30 to 30 inclusive
-/// * months will be held in the range -11 to 11 inclusive
-///  
-/// It is worth noting that because months can vary in length, the days 
-/// fractional part could hold a value that is invalid when considered in 
-/// conjuction with a given date. For example, there is no reasonable
-/// representation of 30 days from 31<sup>st</sup> Jan and it would ideally be
-/// collapsed down to 1 month and 1 or 2 days, depending on whether the year is
-///  a leap year or not!
+/// A duration can vary depending on the date it is measured from. For 
+/// example, 4 days on from 27th Feb 2021 is 4th Mar. But the same 4 days
+/// on from the 27th Mar is 31st of the same month. This variation makes 
+/// it difficult to consistently work with durations between dates
 /// 
-/// Because of the inconsistent relationship between days and months, it is
-/// not possible to derive this object from [`time::Duration`], which only 
-/// reliably works up to intervals of a week. [`time::Duration`] can hold many
-/// days, which equate to time spans of well over a year, but it never attempts to
-/// relate them into months and years, owing to this ambiguity
+/// The order of application of years, months and days **matters**.
+/// In the forwards direction it is assumed that  periods are added 
+/// in the following order:
+/// 1) years
+/// 2) months
+/// 3) days
 /// 
-/// As a design decision this module will hold the day fractional part in a
-/// manner that _could_ overflow into a months representation for certain 
-/// start dates, which in turn means that there are multiple equivalent
-/// `Duration`s between some pairs of specific dates. These specific dates,
-/// which are at risk of have multiple `Duration` representations are
-/// predominently end of month dates, which should be less common to work with.
-/// It remains up to the user of this library to be aware of this inconsistency
-/// and ensure this does not cause issues with thier code. Any inputs that use 
-/// the overflow coercion are also at risk
+/// However, after the addition of years and months it can be the case
+/// that an invalid date has been arrived at. This occurs when a
+/// "long" month date gets applied to a "short" month, normally when
+/// the "from" day is the 31st, although February will restrict a few 
+/// days more. To solve the invalid intermediate date issue, and only when 
+/// this is found to occur, the day part diff will instead be done first.
+/// Years then months will follow for this edge case.
+/// 
+/// If swapping the part application order also fails, for example when 
+/// there is no day part to the duration, then the intermediate date is 
+/// truncated to be end of month following the year/month move.
+/// 
+/// For negative durations, it is enforced that the duration parts are
+/// kept the same as a forward duration between the two dates, i.e. 
+/// the duration that would be assessed if the order of the dates were
+/// transposed. The consequence of this decision are that for negative
+/// durations the order in which the parts are subtracted is reversed,
+/// as comapred to a forward duration:
+/// 1) days
+/// 2) months
+/// 3) years
+/// 
+/// A similar order transposition will occur if an invalid intermediate
+/// date is arrived at
+/// 
+/// `Duration` can be added and subtracted from `Date`. It is asserted that
+/// any addition of a `Duration` is reversable. This means that if you take
+/// any `Date` and add a `Duration` then subtracting the same `Duration`
+/// from the result will alwys bring you back to the initial `Date`. The 
+/// same holds if the `Duration` is subtracted first.
+/// 
+/// The above logic means that some dates can be arrived at from multiple
+/// start dates and a given `Duration`. For example, the 29th Mar less 1
+/// month is the 28th Feb, but so is the 28th Mar, the 30th Mar and the 31st
+/// Mar. Therefore, 28th Feb plus 1 month is 28th Mar, 29th Mar, 30th Mar &
+/// 31st Mar all at the same time!
+/// 
+/// To handle this ambigutity, `Date` and `Duration` aritmetic combinations
+/// return a `DateArithmeticOutput` object rather than just a `Date`, as
+/// might be expected. `DateArithmeticOutput` is a simple wrapper on a vector
+/// of all the possible results from a `Date` and `Duration` arithmetic 
+/// combination. Often it will only hold one `Date`. The most likely `Date`
+/// result can always be extracted from `DateArithmeticOutput` by calling the
+/// `primary()` method
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct Duration {
-    days: i32,   // will be on range -30..30 (inclusive)
-    months: i32, // will be on range -11..11 (inclusive)
-    years: i32, // will be any valid i32
+    days: i32,
+    months: i32,
+    years: i32,
 }
 
 impl Duration {
 
-    /// Create a new `Duration` with length determined.
+    // region: constructors
+    /// Create a new `Duration`
     ///  
-    /// Do not try to coerce the values as the correct coercion
-    /// can only be determined with a reference start or end 
-    /// date
+    /// Does not try to coerce the values as the correct coercion
+    /// can only be determined with a reference date
+    /// 
+    /// Subsequently use the `normalise()` method if you wish to coerce the
+    /// values to a sensible range e.g. 365 days -> 1 year
     pub fn new(days: i32, months: i32, years: i32) -> Self {
         Self { days, months, years }
     }
@@ -101,13 +133,24 @@ impl Duration {
         Self::from_dates_pos(to, from).invert()
     }
 
+    /// Create a new `Duration` from a [`time::Duration`] object
+    pub fn from_time_duration(dur: time::Duration) -> Self {
+        let days = dur.whole_days();
+        let days = i32::try_from(days).unwrap();
+        Self::new(days, 0, 0)
+    }
+
+    /// Internal method for calculating a `Duration` from a pair
+    /// of dates. Used by the `from_dates()` method. This method 
+    /// only works on dates in a postive direction i.e. the `from`
+    /// date is before the `to` date
     fn from_dates_pos(from: Date, to: Date) -> Self {
 
         let mut years = to.year() - from.year();
         let mut months = to.month() as i32 - from.month() as i32;
         let mut days = to.day() as i32 - from.day() as i32;
 
-        //(years, months) = Duration::coerce_ym(years, months, days); // unstable feature!
+        //(years, months) = Self::coerce_ym(years, months, days); // unstable feature!
         match Self::coerce_ym(years, months, days) {
             (y, m) => {
                 years = y;
@@ -116,7 +159,7 @@ impl Duration {
         }
 
         if days < 0 {
-            //(months, days) = Duration::coerce_md(months, days, from, to); // unstable feature!
+            //(months, days) = Self::coerce_md(months, days, from, to); // unstable feature!
             match Self::coerce_md (months, from, to) {
                 (m, d) => {
                     months = m;
@@ -187,16 +230,9 @@ impl Duration {
         };
         (months, days)
     }
+    // endregion constructors
 
-    /// Function to convert an overflowing duration created by a new
-    /// call into a normalise days, months and years duration.
-    /// By normalised it is meant that days are in the range 0..32 &
-    /// months are in the range  0..13
-    pub fn normalise(&self, date: Date) -> Self {
-        let to = (date + self).primary();
-        Self::from_dates(date, to)
-    }
-
+    // region: getters
     pub fn days(&self) -> i32 {
         self.days
     }
@@ -208,15 +244,48 @@ impl Duration {
     pub fn years(&self) -> i32 {
         self.years
     }
+    // endregion getters
+
+    // region: utility methods
+    /// Function to convert an overflowing duration created by a new
+    /// call into a normalise days, months and years duration.
+    /// By normalised it is meant that days are in the range 0..32 &
+    /// months are in the range  0..13
+    pub fn normalise(&self, date: Date) -> Self {
+        let to = (date + self).primary();
+        Self::from_dates(date, to)
+    }
 
     /// Inverts a duration by changing the sign on every part of the duration
-    fn invert(&self) -> Self {
+    pub fn invert(&self) -> Self {
         let days = -self.days;
         let months = -self.months;
         let years = -self.years;
         Duration { days, months, years }
     }
 
+    /// Convert the duration to an approximate number of days.
+    /// Isn't perfect as to get this right you'd need to know which reference 
+    /// date you're starting from
+    pub fn size(&self) -> f64 {
+        self.years as f64 * 365.25
+            + self.months as f64 * 365.25 / 12_f64
+            + self.days as f64
+    }
+
+    /// Is the direction of the duration forwards in time?
+    /// False implies it's backwards in time.
+    /// 
+    /// Because this relies on size()
+    /// it's possible that for weird mixed sign durations this could be 
+    /// wrong when the duration is close to zero. CBA to code for this as
+    /// no one using this sanely should be doing this.
+    pub fn forwards(&self) -> bool {
+        self.size() > 0_f64
+    }
+    // endregion utility methods
+
+    // region: addition
     fn add_int(dur: Duration, date: Date) -> DateArithmeticOutput {
 
         // Add days first for negative durations & last for positive
@@ -257,26 +326,6 @@ impl Duration {
 
         }
         output
-    }
-
-    /// Is the direction of the duration forwards in time?
-    /// False implies it's backwards in time.
-    /// 
-    /// Because this relies on size()
-    /// it's possible that for weird mixed sign durations this could be 
-    /// wrong when the duration is close to zero. CBA to code for this as
-    /// no one using this sanely should be doing this.
-    pub fn forwards(&self) -> bool {
-        self.size() > 0_f64
-    }
-
-    /// Convert the duration to an approximate number of days.
-    /// Isn't perfect as to get this right you'd need to know which reference 
-    /// date you're starting from
-    pub fn size(&self) -> f64 {
-        self.years as f64 * 365.25
-            + self.months as f64 * 30.5
-            + self.days as f64
     }
 
     /// Determine if the date plus duration will give rise to multiple outputs
@@ -395,9 +444,11 @@ impl Duration {
         let julian = date.to_julian_day() + self.days;
         Date::from_julian_day(julian).unwrap()
     }
+    // endregion addition
 
 }
 
+// region: trait implementaions
 impl Add for Duration {
     type Output = Self;
 
@@ -477,6 +528,7 @@ impl Sub<Duration> for DateArithmeticOutput {
     }
 
 }
+// endregion trait implementations
 
 impl fmt::Display for Duration {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
