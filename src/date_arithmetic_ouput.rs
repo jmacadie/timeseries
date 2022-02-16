@@ -1,6 +1,6 @@
-use time::Date;
-use std::convert::TryFrom;
 use core::fmt;
+use std::convert::TryFrom;
+use time::Date;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DateArithmeticOutput {
@@ -9,47 +9,50 @@ pub struct DateArithmeticOutput {
 }
 
 impl DateArithmeticOutput {
-
     pub fn new(date: Date) -> Self {
         let values = vec![date];
-        Self { values, index: 0_u8 }
+        Self {
+            values,
+            index: 0_u8,
+        }
     }
 
-    pub fn append(&mut self, date: Date) -> () {
+    pub fn append(&mut self, date: Date) {
         self.values.push(date);
     }
 
     pub fn contains(&self, date: Date) -> bool {
         for d in self.values.iter() {
-            if *d == date { return true; }
+            if *d == date {
+                return true;
+            }
         }
-        return false;
+        false
     }
 
     pub fn primary(&self) -> Date {
-        return self.values[0].clone();
+        self.values[0]
     }
 
     pub fn value(&self, idx: u8) -> Option<Date> {
         match self.len() {
             Some(l) => {
                 if (idx + 1) > l {
-                    return None;
+                    None
                 } else {
-                    return Some(self.values[idx as usize].clone());
+                    Some(self.values[idx as usize])
                 }
-            },
-            None => { return None; },
-        };
+            }
+            None => None,
+        }
     }
 
     fn len(&self) -> Option<u8> {
         match u8::try_from(self.values.len()) {
-            Ok(l) => { return Some(l); },
-            Err(_) => { return None; },
-        };
+            Ok(l) => Some(l),
+            Err(_) => None,
+        }
     }
-
 }
 
 impl fmt::Display for DateArithmeticOutput {
@@ -69,15 +72,15 @@ impl Iterator for DateArithmeticOutput {
     fn next(&mut self) -> Option<Self::Item> {
         let max = match self.len() {
             Some(l) => l - 1,
-            None => { return None; },
+            None => {
+                return None;
+            }
         };
         if self.index >= max {
             None
         } else {
             self.index += 1;
-            Some(self.values[(self.index - 1) as usize].clone())
+            Some(self.values[(self.index - 1) as usize])
         }
     }
-
 }
-

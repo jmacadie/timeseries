@@ -1,9 +1,9 @@
-use time::{Date, Month, util::days_in_year_month};
-use crate::{Period, DateRange};
+use crate::{duration::Duration, DateRange, Period};
 use std::cmp;
+use time::{util::days_in_year_month, Date, Month};
 
 /// # Timeline
-/// 
+///
 /// An object that represnts a contiguous period of time and an assocaited
 /// periodicity. The periodicity defines the chunks of time the timeline will be
 /// apportioned into and currently implements:
@@ -12,155 +12,180 @@ use std::cmp;
 /// * Monthly
 /// * Quarterly
 /// * Annual
-/// 
+///
 /// Because the time range is not guaranteed to be a whole number of time periods,
 /// the final period can be a short period. For example, a timeline that is 3 months
 /// and 2 days, with periodicity of monthly will comprise 4 time periods. The first
 /// three periods will be whole months and the final one will be 2 days
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Timeline {
-    pub(crate)range: DateRange,
+    pub(crate) range: DateRange,
     periodicity: Period,
     current_date: Date,
     pub(crate) len: i32,
 }
 
 impl Timeline {
-    
     pub fn new(range: DateRange, periodicity: Period) -> Self {
-        let curr = range.from().clone();
-        let len = Timeline::range_len(range, periodicity);
+        let len = match periodicity {
+            Period::Day => range.as_days(),
+            Period::Week => range.as_weeks(true),
+            Period::Month => range.as_months(true),
+            Period::Quarter => range.as_quarters(true),
+            Period::Year => range.as_years(true),
+        };
         Timeline {
             range,
             periodicity,
-            current_date: curr,
+            current_date: range.from(),
             len,
         }
     }
 
-    // TODO: don't take a range but dates from and to. This should support the new function that can index at a date
-    /// Returns the number of time periods that will occur over the date
-    /// range for a given periodicity.
-    /// 
-    /// Note that a fractional period at the end will be counted as a whole period
-    /// e.g. if the time period is two months and a day and the periodicity is 
-    /// monthly then there will be 3 periods, the final one being only one
-    /// day long.
-    fn range_len(range: DateRange, periodicity: Period) -> i32 {
-        let mut diff: i32;
-        match periodicity {
-            Period::Day => {
-                range.to.to_julian_day() - range.from.to_julian_day()
-            },
-            Period::Week => {
-                (range.to.to_julian_day() - range.from.to_julian_day()) / 7
-            },
-            Period::Month => {
-                diff = 12 * (range.to.year() - range.from.year());
-                // get the ordinal value of the month out of the Month enum
-                let m1 = range.to.month() as i32; 
-                let m2 = range.from.month() as i32;
-                diff += m1 - m2;
-                if (m1 == m2) && (range.to.day() > range.from.day()) { diff += 1; }
-                diff
-            },
-            Period::Quarter => {
-                diff = 4 * (range.to.year() - range.from.year());
-                // get the ordinal value of the  month out of the Month enum
-                let m1 = range.to.month() as i32; 
-                let m2 = range.from.month() as i32;
-                diff += (m1 - m2) / 4;
-                if (m1 == m2) && (range.to.day() > range.from.day()) { diff += 1; }
-                diff
-            },
-            Period::Year => {
-                diff = range.to.year() - range.from.year();
-                // get the ordinal value of the  month out of the Month enum
-                let m1 = range.to.month() as i8;
-                let m2 = range.from.month() as i8;
-                if m1 > m2 { diff += 1; }
-                if (m1 == m2) && (range.to.day() > range.from.day()) { diff += 1; }
-                diff
-            },
+    pub fn change_periodicity(&self, new: Period) -> Self {
+        Timeline::new(self.range, new)
+    }
+
+    pub fn index_at(self, date: Date) -> Option<i32> {
+        if !self.range.contains(date) {
+            return None;
+        }
+        let tmp_range = DateRange::new(self.range.from, date);
+        match self.periodicity {
+            Period::Day => Some(tmp_range.as_days()),
+            Period::Week => Some(tmp_range.as_weeks(false)),
+            Period::Month => Some(tmp_range.as_months(false)),
+            Period::Quarter => Some(tmp_range.as_quarters(false)),
+            Period::Year => Some(tmp_range.as_years(false)),
         }
     }
 
-    // TODO: write the following:
-    //  * a function to return the index at a given date. Will be needed by the TimeSeries object to extract values at a given date
-    //  * a function to change periodicity. For example can see wanting to summarise up from Monthly calcs to an annual output
-    //  * a getter for an individual time period, returned as a DateRange
-    //  * a getter for a time slice (maybe? need to think of the use case)
-    
-    // TODO: even needed?
-    pub fn merge(self, other: Timeline) -> Result<Option<Timeline>, &'static str> {
-        if self == other { return Ok(None); }
-        if self.periodicity != other.periodicity { return Err("Time periods do match"); }
-        Ok(
-            Some(
-                Timeline::new(self.range.union(&other.range), self.periodicity.clone())
-            )
-        )
+    pub fn index(&self, idx: i32) -> Option<DateRange> {
+        if idx >= self.len {
+            return None;
+        }
+        let dur1: Duration;
+        let dur2: Duration;
+        match self.periodicity {
+            Period::Day => {
+                dur1 = Duration::new(idx, 0, 0);
+                dur2 = Duration::new(1, 0, 0);
+            }
+            Period::Week => {
+                dur1 = Duration::new(7 * idx, 0, 0);
+                dur2 = Duration::new(7, 0, 0);
+            }
+            Period::Month => {
+                dur1 = Duration::new(0, idx, 0);
+                dur2 = Duration::new(0, 1, 0);
+            }
+            Period::Quarter => {
+                dur1 = Duration::new(0, 3 * idx, 0);
+                dur2 = Duration::new(0, 3, 0);
+            }
+            Period::Year => {
+                dur1 = Duration::new(0, 0, idx);
+                dur2 = Duration::new(0, 0, 1);
+            }
+        };
+        let start = (self.range.from + dur1).primary();
+        let end = cmp::min((start + dur2).primary(), self.range.to);
+        Some(DateRange::new(start, end))
     }
 
+    // TODO: write the following:
+    //  * a getter for a time slice (maybe? need to think of the use case)
+
+    // TODO: even needed?
+    pub fn merge(self, other: Timeline) -> Result<Option<Timeline>, &'static str> {
+        if self == other {
+            return Ok(None);
+        }
+        if self.periodicity != other.periodicity {
+            return Err("Time periods do match");
+        }
+        Ok(Some(Timeline::new(
+            self.range.union(&other.range),
+            self.periodicity,
+        )))
+    }
 }
 
 impl Iterator for Timeline {
     type Item = DateRange;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.current_date == *self.range.to() { return None; }
+        if self.current_date == self.range.to() {
+            return None;
+        }
 
-        let mut next_date = self.current_date.clone();
+        let mut next_date = self.current_date;
         match self.periodicity {
             Period::Day => {
                 next_date = match next_date.next_day() {
                     Some(d) => d,
-                    None => { return None; },
+                    None => {
+                        return None;
+                    }
                 }
-            },
+            }
             Period::Week => {
                 for _ in 1..8 {
                     next_date = match next_date.next_day() {
                         Some(d) => d,
-                        None => { return None; },
+                        None => {
+                            return None;
+                        }
                     }
                 }
-            },
+            }
             Period::Month => {
                 let (mut y, mut m, mut d) = next_date.to_calendar_date();
                 m = m.next();
-                if m == Month::January { y += 1 };
+                if m == Month::January {
+                    y += 1
+                };
                 d = cmp::min(days_in_year_month(y, m), d);
                 next_date = match Date::from_calendar_date(y, m, d) {
                     Ok(d) => d,
-                    Err(_) => { return None; },
+                    Err(_) => {
+                        return None;
+                    }
                 }
-            },
+            }
             Period::Quarter => {
                 let (mut y, mut m, mut d) = next_date.to_calendar_date();
                 for _ in 1..4 {
                     m = m.next();
-                    if m == Month::January { y += 1 };
+                    if m == Month::January {
+                        y += 1
+                    };
                 }
                 d = cmp::min(days_in_year_month(y, m), d);
                 next_date = match Date::from_calendar_date(y, m, d) {
                     Ok(d) => d,
-                    Err(_) => { return None; },
+                    Err(_) => {
+                        return None;
+                    }
                 }
-            },
+            }
             Period::Year => {
                 let (y, m, d) = next_date.to_calendar_date();
                 next_date = match Date::from_calendar_date(y + 1, m, d) {
                     Ok(d) => d,
-                    Err(_) => { return None; },
+                    Err(_) => {
+                        return None;
+                    }
                 }
-            },
+            }
         }
-        
-        if next_date > *self.range.to() { next_date = self.range.to().clone(); } 
+
+        if next_date > self.range.to() {
+            next_date = self.range.to();
+        }
 
         let date_range = DateRange::new(self.current_date, next_date);
-        self.current_date = date_range.to().clone();
+        self.current_date = date_range.to();
         Some(date_range)
     }
 }
@@ -178,7 +203,7 @@ mod tests {
 
     #[test]
     fn period_iterator() {}
-    
+
     // TODO: write some proper tests!
 
     #[test]
@@ -191,7 +216,9 @@ mod tests {
         for test_range in tl {
             assert_eq!(test_range.to().year(), 2022);
             i += 1;
-            if i > 4 { break; }
+            if i > 4 {
+                break;
+            }
         }
     }
 }

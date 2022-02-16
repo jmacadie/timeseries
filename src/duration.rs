@@ -1,44 +1,47 @@
 use crate::DateArithmeticOutput;
-use time::{Date, Month, util::{days_in_year, days_in_year_month}};
-use std::ops::{Add, Sub};
-use std::cmp;
 use core::fmt;
+use std::cmp;
+use std::ops::{Add, Sub};
+use time::{
+    util::{days_in_year, days_in_year_month},
+    Date, Month,
+};
 
 /// # Duration
-/// 
+///
 /// A struct to hold & work with a duration interval that spans days,
-/// months and years. The days and months parts are intended to hold the 
+/// months and years. The days and months parts are intended to hold the
 /// fractional parts that cannot be represented by a higher time period
-/// 
+///
 /// Durations can be negative, like [`time::Duration`], but unlike
 /// [`core::time::Duration`]
 ///
-/// A duration can vary depending on the date it is measured from. For 
+/// A duration can vary depending on the date it is measured from. For
 /// example, 4 days on from 27th Feb 2021 is 4th Mar. But the same 4 days
-/// on from the 27th Mar is 31st of the same month. This variation makes 
+/// on from the 27th Mar is 31st of the same month. This variation makes
 /// it difficult to consistently work with durations between dates
-/// 
+///
 /// The order of application of years, months and days **matters**.
-/// In the forwards direction it is assumed that  periods are added 
+/// In the forwards direction it is assumed that  periods are added
 /// in the following order:
 /// 1) years
 /// 2) months
 /// 3) days
-/// 
+///
 /// However, after the addition of years and months it can be the case
 /// that an invalid date has been arrived at. This occurs when a
 /// "long" month date gets applied to a "short" month, normally when
-/// the "from" day is the 31st, although February will restrict a few 
-/// days more. To solve the invalid intermediate date issue, and only when 
+/// the "from" day is the 31st, although February will restrict a few
+/// days more. To solve the invalid intermediate date issue, and only when
 /// this is found to occur, the day part diff will instead be done first.
 /// Years then months will follow for this edge case.
-/// 
-/// If swapping the part application order also fails, for example when 
-/// there is no day part to the duration, then the intermediate date is 
+///
+/// If swapping the part application order also fails, for example when
+/// there is no day part to the duration, then the intermediate date is
 /// truncated to be end of month following the year/month move.
-/// 
+///
 /// For negative durations, it is enforced that the duration parts are
-/// kept the same as a forward duration between the two dates, i.e. 
+/// kept the same as a forward duration between the two dates, i.e.
 /// the duration that would be assessed if the order of the dates were
 /// transposed. The consequence of this decision are that for negative
 /// durations the order in which the parts are subtracted is reversed,
@@ -46,26 +49,26 @@ use core::fmt;
 /// 1) days
 /// 2) months
 /// 3) years
-/// 
+///
 /// A similar order transposition will occur if an invalid intermediate
 /// date is arrived at
-/// 
+///
 /// `Duration` can be added and subtracted from `Date`. It is asserted that
 /// any addition of a `Duration` is reversable. This means that if you take
 /// any `Date` and add a `Duration` then subtracting the same `Duration`
-/// from the result will alwys bring you back to the initial `Date`. The 
+/// from the result will alwys bring you back to the initial `Date`. The
 /// same holds if the `Duration` is subtracted first.
-/// 
+///
 /// The above logic means that some dates can be arrived at from multiple
 /// start dates and a given `Duration`. For example, the 29th Mar less 1
 /// month is the 28th Feb, but so is the 28th Mar, the 30th Mar and the 31st
 /// Mar. Therefore, 28th Feb plus 1 month is 28th Mar, 29th Mar, 30th Mar &
 /// 31st Mar all at the same time!
-/// 
+///
 /// To handle this ambigutity, `Date` and `Duration` aritmetic combinations
 /// return a `DateArithmeticOutput` object rather than just a `Date`, as
 /// might be expected. `DateArithmeticOutput` is a simple wrapper on a vector
-/// of all the possible results from a `Date` and `Duration` arithmetic 
+/// of all the possible results from a `Date` and `Duration` arithmetic
 /// combination. Often it will only hold one `Date`. The most likely `Date`
 /// result can always be extracted from `DateArithmeticOutput` by calling the
 /// `primary()` method
@@ -77,42 +80,45 @@ pub struct Duration {
 }
 
 impl Duration {
-
     // region: constructors
     /// Create a new `Duration`
     ///  
     /// Does not try to coerce the values as the correct coercion
     /// can only be determined with a reference date
-    /// 
+    ///
     /// Subsequently use the `normalise()` method if you wish to coerce the
     /// values to a sensible range e.g. 365 days -> 1 year
     pub fn new(days: i32, months: i32, years: i32) -> Self {
-        Self { days, months, years }
+        Self {
+            days,
+            months,
+            years,
+        }
     }
 
     /// Create a new `Duration` from a pair of dates
-    /// 
+    ///
     /// The order of application of years, months and days **matters**.
-    /// In the forwards direction it is assumed that  periods are added 
+    /// In the forwards direction it is assumed that  periods are added
     /// in the following order:
     /// 1) years
     /// 2) months
     /// 3) days
-    /// 
+    ///
     /// However, after the addition of years and months it can be the case
     /// that an invalid date has been arrived at. This occurs when a
     /// "long" month date gets applied to a "short" month, normally when
-    /// the "from" day is the 31st, although February will restrict a few 
-    /// days more. To solve the invalid intermediate date issue, and only when 
+    /// the "from" day is the 31st, although February will restrict a few
+    /// days more. To solve the invalid intermediate date issue, and only when
     /// this is found to occur, the day part diff will instead be done first.
     /// Years then months will follow for this edge case.
-    /// 
-    /// If swapping the part application order also fails, for example when 
-    /// there is no day part to the duration, then the intermediate date is 
+    ///
+    /// If swapping the part application order also fails, for example when
+    /// there is no day part to the duration, then the intermediate date is
     /// truncated to be end of month following the year/month move.
-    /// 
+    ///
     /// For negative durations, it is enforced that the duration parts are
-    /// kept the same as a forward duration between the two dates, i.e. 
+    /// kept the same as a forward duration between the two dates, i.e.
     /// the duration that would be assessed if the order of the dates were
     /// transposed. The consequence of this decision are that for negative
     /// durations the order in which the parts are subtracted is reversed,
@@ -120,14 +126,16 @@ impl Duration {
     /// 1) days
     /// 2) months
     /// 3) years
-    /// 
+    ///
     /// A similar order transposition will occur if an invalid intermediate
     /// date is arrived at
     pub fn from_dates(from: Date, to: Date) -> Self {
         // If dates ordered with from before to, then just run a normal
         // duration calc
-        if to > from { return Self::from_dates_pos(from, to); }
-        
+        if to > from {
+            return Self::from_dates_pos(from, to);
+        }
+
         // Here dates ordered the other way around: calculate the duration
         // the right way around and then reverse the sign of all the parts
         Self::from_dates_pos(to, from).invert()
@@ -141,49 +149,39 @@ impl Duration {
     }
 
     /// Internal method for calculating a `Duration` from a pair
-    /// of dates. Used by the `from_dates()` method. This method 
+    /// of dates. Used by the `from_dates()` method. This method
     /// only works on dates in a postive direction i.e. the `from`
     /// date is before the `to` date
     fn from_dates_pos(from: Date, to: Date) -> Self {
-
         let mut years = to.year() - from.year();
         let mut months = to.month() as i32 - from.month() as i32;
         let mut days = to.day() as i32 - from.day() as i32;
 
-        //(years, months) = Self::coerce_ym(years, months, days); // unstable feature!
-        match Self::coerce_ym(years, months, days) {
-            (y, m) => {
-                years = y;
-                months = m;
-            }
-        }
+        let (y, m) = Self::coerce_ym(years, months, days);
+        months = m;
+        years = y;
 
         if days < 0 {
-            //(months, days) = Self::coerce_md(months, days, from, to); // unstable feature!
-            match Self::coerce_md (months, from, to) {
-                (m, d) => {
-                    months = m;
-                    days = d;
-                }
-            }
+            let (m2, d) = Self::coerce_md(months, from, to);
+            months = m2;
+            days = d;
         }
         Self::new(days, months, years)
     }
 
     /// Fix years and months to valid, consistent ranges
     fn coerce_ym(mut years: i32, mut months: i32, days: i32) -> (i32, i32) {
-        if years > 0 &&
-          (months < 0 || (months == 0 && days < 0)) {
-              years -= 1;
-              months += 12;
+        if years > 0 && (months < 0 || (months == 0 && days < 0)) {
+            years -= 1;
+            months += 12;
         }
         (years, months)
     }
-    
+
     /// Fix months and days to valid ranges
-    /// 
+    ///
     /// Months are positive and days are negative
-    fn coerce_md (mut months: i32, from: Date, to: Date) -> (i32, i32) {
+    fn coerce_md(mut months: i32, from: Date, to: Date) -> (i32, i32) {
         // Months will be in range 1..=12
 
         months -= 1;
@@ -209,24 +207,18 @@ impl Duration {
                 // Instead need to add enough days to the from date to get to the first day of the next
                 // month before we consider the month or the year move
                 // If we have this, the day diff can be calculated directly and we can return straight out
-                days = to.day() as i32
-                       + days_in_year_month(from.year(), from.month()) as i32
-                       - from.day() as i32
-                       + 1;
+                days = to.day() as i32 + days_in_year_month(from.year(), from.month()) as i32
+                    - from.day() as i32
+                    + 1;
                 return (months, days);
-            },
+            }
         };
 
         days = match temp_month {
             Month::December => {
-                to.ordinal() as i32
-                - temp_date.ordinal() as i32
-                + days_in_year(temp_year) as i32
-            },
-            _ => {
-                to.ordinal() as i32
-                - temp_date.ordinal() as i32
-            },
+                to.ordinal() as i32 - temp_date.ordinal() as i32 + days_in_year(temp_year) as i32
+            }
+            _ => to.ordinal() as i32 - temp_date.ordinal() as i32,
         };
         (months, days)
     }
@@ -261,23 +253,25 @@ impl Duration {
         let days = -self.days;
         let months = -self.months;
         let years = -self.years;
-        Duration { days, months, years }
+        Duration {
+            days,
+            months,
+            years,
+        }
     }
 
     /// Convert the duration to an approximate number of days.
-    /// Isn't perfect as to get this right you'd need to know which reference 
+    /// Isn't perfect as to get this right you'd need to know which reference
     /// date you're starting from
     pub fn size(&self) -> f64 {
-        self.years as f64 * 365.25
-            + self.months as f64 * 365.25 / 12_f64
-            + self.days as f64
+        self.years as f64 * 365.25 + self.months as f64 * 365.25 / 12_f64 + self.days as f64
     }
 
     /// Is the direction of the duration forwards in time?
     /// False implies it's backwards in time.
-    /// 
+    ///
     /// Because this relies on size()
-    /// it's possible that for weird mixed sign durations this could be 
+    /// it's possible that for weird mixed sign durations this could be
     /// wrong when the duration is close to zero. CBA to code for this as
     /// no one using this sanely should be doing this.
     pub fn forwards(&self) -> bool {
@@ -287,11 +281,10 @@ impl Duration {
 
     // region: addition
     /// Root internal method for performing addition.
-    /// Called by the trait implementations which consider the 
+    /// Called by the trait implementations which consider the
     /// various combinations of adding and subtracting Dates and
     /// Durations
     fn add_int(dur: Duration, date: Date) -> DateArithmeticOutput {
-
         // Add days first for negative durations & last for positive
         let days_first: bool;
         if dur.forwards() {
@@ -299,24 +292,20 @@ impl Duration {
         } else {
             days_first = true;
         }
-        
+
         let mut output = dur.add_once(date, days_first, true);
 
         // Add the other days that could result from the addition / subtraction
         if dur.is_multiple_output(date) {
-
-            // Deal with days that could have multiplied because both routes give rise to 
+            // Deal with days that could have multiplied because both routes give rise to
             // an invalid date, so the invalid date is truncated to month end
             // Only ever happens at end of month
             if Self::is_eom(date) {
-                let day = date.day() as i32 + cmp::max(dur.days,0) + 1;
-                let month;
-                let year;
-                match dur.add_ym(date) {
-                    (y, m) => { year = y; month = m; }
-                }
-                let lim = days_in_year_month(year, month) as i32 + cmp::min(dur.days,0) + 1;
-                for i in day..lim { // N.B. might never loop here & that's OK
+                let day = date.day() as i32 + cmp::max(dur.days, 0) + 1;
+                let (year, month) = dur.add_ym(date);
+                let lim = days_in_year_month(year, month) as i32 + cmp::min(dur.days, 0) + 1;
+                for i in day..lim {
+                    // N.B. might never loop here & that's OK
                     let temp = i as u8;
                     output.append(Date::from_calendar_date(year, month, temp).unwrap());
                 }
@@ -327,14 +316,12 @@ impl Duration {
             if !output.contains(d) {
                 output.append(d);
             }
-
         }
         output
     }
 
     /// Determine if the date plus duration will give rise to multiple outputs
     fn is_multiple_output(&self, date: Date) -> bool {
-        
         let temp: Date;
         let day_lim: i32;
 
@@ -345,37 +332,22 @@ impl Duration {
             temp = self.add_days(date);
             day_lim = 1 - self.days;
         }
-        
-        let year: i32;
-        let month: Month;
 
-        match self.add_ym(temp) {
-            (y, m) => {
-                year = y;
-                month = m;
-            }
-        }
+        let (year, month) = self.add_ym(temp);
         let to = days_in_year_month(year, month) as i32;
         let from = days_in_year_month(temp.year(), temp.month()) as i32;
 
-        temp.day() as i32 >
-            from
-            - cmp::min(
-                cmp::max(to - from, 0),
-                cmp::max(day_lim, 1)
-            )
-
+        temp.day() as i32 > from - cmp::min(cmp::max(to - from, 0), cmp::max(day_lim, 1))
     }
 
     /// Is the date at the end of the month?
     fn is_eom(date: Date) -> bool {
-        return date.day() == days_in_year_month(date.year(), date.month());
+        date.day() == days_in_year_month(date.year(), date.month())
     }
 
-    /// Add years and months to a date, wrapping month overflows into 
+    /// Add years and months to a date, wrapping month overflows into
     /// additional years. Return a tuple of the resultant year and month
     fn add_ym(&self, date: Date) -> (i32, Month) {
-
         // Overflowing add on the year and month part
         let mut year = date.year() + self.years;
         let mut month = date.month() as i32 + self.months;
@@ -393,16 +365,14 @@ impl Duration {
         let month = Month::try_from(month as u8).unwrap();
 
         (year, month)
-
     }
 
-    /// Internal method for addition. Allows us to try days first or second and if it 
+    /// Internal method for addition. Allows us to try days first or second and if it
     /// fails, the other way around.
-    /// 
+    ///
     /// If the other way round also fails, will truncate
     /// the failing intermediate date to end of month
     fn add_once(&self, date: Date, days_first: bool, first_pass: bool) -> DateArithmeticOutput {
-        
         // Assign the internal date variable & add days, if that's what we're doing
         let mut temp: Date;
         if days_first {
@@ -412,26 +382,16 @@ impl Duration {
         }
         let day = temp.day();
 
-        let year: i32;
-        let month: Month;
-        match self.add_ym(temp) {
-            (y, m) => {
-                year = y;
-                month = m;
-            }
-        }
+        let (year, month) = self.add_ym(temp);
 
         // Try to create the intermediate date
         temp = match Date::from_calendar_date(year, month, day) {
             Ok(d) => d,
             Err(_) => {
-                if !first_pass { 
+                if !first_pass {
                     // If all else fails then take the day at the end of the month being tried
-                    let d = Date::from_calendar_date(
-                            year,
-                            month, 
-                            days_in_year_month(year, month)
-                        ).unwrap();
+                    let d = Date::from_calendar_date(year, month, days_in_year_month(year, month))
+                        .unwrap();
                     return DateArithmeticOutput::new(d);
                 }
                 return self.add_once(date, !days_first, false);
@@ -444,14 +404,13 @@ impl Duration {
         }
         DateArithmeticOutput::new(temp)
     }
-    
+
     /// Internal method to add any number of days to a date
     fn add_days(&self, date: Date) -> Date {
         let julian = date.to_julian_day() + self.days;
         Date::from_julian_day(julian).unwrap()
     }
     // endregion addition
-
 }
 
 // region: trait implementaions
@@ -464,7 +423,6 @@ impl Add for Duration {
         let days = self.days as i32 + other.days as i32;
         Duration::new(days, months, years)
     }
-
 }
 
 impl Add<Date> for Duration {
@@ -473,7 +431,6 @@ impl Add<Date> for Duration {
     fn add(self, rhs: Date) -> DateArithmeticOutput {
         Self::add_int(self, rhs)
     }
-
 }
 
 impl Add<Duration> for Date {
@@ -482,7 +439,6 @@ impl Add<Duration> for Date {
     fn add(self, rhs: Duration) -> DateArithmeticOutput {
         Duration::add_int(rhs, self)
     }
-
 }
 
 impl Add<&Duration> for Date {
@@ -491,7 +447,6 @@ impl Add<&Duration> for Date {
     fn add(self, rhs: &Duration) -> DateArithmeticOutput {
         Duration::add_int(*rhs, self)
     }
-
 }
 
 impl Add<Duration> for DateArithmeticOutput {
@@ -501,7 +456,6 @@ impl Add<Duration> for DateArithmeticOutput {
         // TODO: add up all the values not just the primary one
         Duration::add_int(rhs, self.primary())
     }
-
 }
 
 impl Sub for Duration {
@@ -513,7 +467,6 @@ impl Sub for Duration {
         let days = self.days as i32 - other.days as i32;
         Duration::new(days, months, years)
     }
-
 }
 
 impl Sub<Duration> for Date {
@@ -522,7 +475,6 @@ impl Sub<Duration> for Date {
     fn sub(self, rhs: Duration) -> DateArithmeticOutput {
         Duration::add_int(rhs.invert(), self)
     }
-
 }
 
 impl Sub<Duration> for DateArithmeticOutput {
@@ -532,7 +484,6 @@ impl Sub<Duration> for DateArithmeticOutput {
         // TODO: add up all the values not just the primary one
         Duration::add_int(rhs.invert(), self.primary())
     }
-
 }
 // endregion trait implementations
 
@@ -541,27 +492,27 @@ impl fmt::Display for Duration {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut out = String::new();
         if self.years == 1 {
-            out.push_str(&format!("1 year"));
+            out.push_str(&"1 year".to_string());
         } else if self.years != 0 {
             out.push_str(&format!("{} years", self.years));
         }
-        if out.len() > 0 && self.months != 0 {
+        if !out.is_empty() && self.months != 0 {
             out.push_str(", ");
         }
         if self.months == 1 {
-            out.push_str(&format!("1 month"));
+            out.push_str(&"1 month".to_string());
         } else if self.months != 0 {
             out.push_str(&format!("{} months", self.months));
         }
-        if out.len() > 0 && self.days != 0 {
+        if !out.is_empty() && self.days != 0 {
             out.push_str(", ");
         }
         if self.days == 1 {
-            out.push_str(&format!("1 day"));
+            out.push_str(&"1 day".to_string());
         } else if self.days != 0 {
             out.push_str(&format!("{} days", self.days));
         }
-        f.write_str(&out) 
+        f.write_str(&out)
     }
 }
 // endregion formatting
@@ -575,33 +526,30 @@ mod tests {
 
     #[test]
     fn create_duration() {
-
         // Create a simple duration
-        let mut d = Duration::new(1, 2 , 3);
+        let mut d = Duration::new(1, 2, 3);
         assert_eq!((d.days(), d.months(), d.years()), (1, 2, 3));
 
         // Create durations with mixed signs
-        d = Duration::new(1, -2 , 3);
+        d = Duration::new(1, -2, 3);
         assert_eq!((d.days(), d.months(), d.years()), (1, -2, 3));
 
-        d = Duration::new(1, 2 , -3);
+        d = Duration::new(1, 2, -3);
         assert_eq!((d.days(), d.months(), d.years()), (1, 2, -3));
-        
-        d = Duration::new(-1, 2 , 3);
+
+        d = Duration::new(-1, 2, 3);
         assert_eq!((d.days(), d.months(), d.years()), (-1, 2, 3));
 
         // Create durations with overflows
-        d = Duration::new(64, 0 , 1);
+        d = Duration::new(64, 0, 1);
         assert_eq!((d.days(), d.months(), d.years()), (64, 0, 1));
 
-        d = Duration::new(64, 10 , 1);
+        d = Duration::new(64, 10, 1);
         assert_eq!((d.days(), d.months(), d.years()), (64, 10, 1));
-
     }
 
     #[test]
     fn create_duration_from_dates() {
-
         // Create a simple duration
         let mut from = Date::from_calendar_date(2022, Month::January, 10).unwrap();
         let mut to = Date::from_calendar_date(2023, Month::January, 10).unwrap();
@@ -677,7 +625,6 @@ mod tests {
         to = Date::from_calendar_date(2022, Month::December, 15).unwrap();
         d = Duration::from_dates(from, to);
         assert_eq!((d.days(), d.months(), d.years()), (16, 1, 0));
-
     }
 
     #[test]
@@ -689,7 +636,7 @@ mod tests {
         // Test simple add
         let mut d = d1 + d2;
         assert_eq!((d.days(), d.months(), d.years()), (101, 22, 53));
-        
+
         // Test commutativity
         d = d2 + d1;
         assert_eq!((d.days(), d.months(), d.years()), (101, 22, 53));
@@ -699,7 +646,6 @@ mod tests {
         assert_eq!((d.days(), d.months(), d.years()), (-9, -41, -9));
         d = d2 + d3;
         assert_eq!((d.days(), d.months(), d.years()), (90, -23, 38));
-
     }
 
     #[test]
@@ -717,12 +663,10 @@ mod tests {
         assert_eq!((d.days(), d.months(), d.years()), (11, 45, 15));
         d = d3 - d2;
         assert_eq!((d.days(), d.months(), d.years()), (-110, -63, -62));
-
     }
 
     #[test]
     fn add_date_duration() {
-
         // Create a simple duration
         let mut date = Date::from_calendar_date(2022, Month::January, 10).unwrap();
         let mut duration = Duration::new(1, 2, 3);
@@ -771,12 +715,10 @@ mod tests {
         date = Date::from_calendar_date(2024, Month::January, 10).unwrap();
         d = (date + duration).primary();
         assert_eq!((d.year(), d.month() as u8, d.day()), (2024, 2, 29));
-
     }
 
     #[test]
     fn add_duration_date() {
-
         // Create a simple duration
         let date = Date::from_calendar_date(2022, Month::January, 10).unwrap();
         let mut duration = Duration::new(1, 2, 3);
@@ -793,7 +735,6 @@ mod tests {
 
     #[test]
     fn sub_date_duration() {
-
         // Create a simple duration
         let mut date = Date::from_calendar_date(2022, Month::December, 10).unwrap();
         let mut duration = Duration::new(1, 2, 3);
@@ -844,12 +785,10 @@ mod tests {
         date = Date::from_calendar_date(2024, Month::March, 10).unwrap();
         d = (date - duration).primary();
         assert_eq!((d.year(), d.month() as u8, d.day()), (2024, 1, 20));
-
     }
 
     #[test]
     fn all_add_results() {
-
         let mut d: Date;
         let mut t: Date;
         let mut dur: Duration;
@@ -859,7 +798,7 @@ mod tests {
 
         // Crazy but true
         d = Date::from_calendar_date(2022, Month::February, 28).unwrap();
-        dur = Duration::new(2,3,0);
+        dur = Duration::new(2, 3, 0);
         res = d + dur;
         t = Date::from_calendar_date(2022, Month::May, 29).unwrap();
         assert!(!res.contains(t));
@@ -876,7 +815,7 @@ mod tests {
 
         // Crazy but true
         d = Date::from_calendar_date(2022, Month::February, 27).unwrap();
-        dur = Duration::new(2,3,0);
+        dur = Duration::new(2, 3, 0);
         res = d + dur;
         t = Date::from_calendar_date(2022, Month::May, 29).unwrap();
         assert!(res.contains(t));
@@ -890,12 +829,10 @@ mod tests {
         assert!(!res.contains(t));
         t = Date::from_calendar_date(2022, Month::June, 3).unwrap();
         assert!(!res.contains(t));
-
     }
 
     #[test]
     fn add_and_sub_duration() {
-
         // Test that adding and subtracting the same interval always gets back to the same start date
 
         /*let mut d1: Date;
@@ -941,8 +878,11 @@ mod tests {
             for day in 0..10 {
                 d1 = Date::from_calendar_date(2022, Month::January, 1).unwrap();
                 dur = Duration::new(day, month, 0);
-                for _ in 0..1500 { // 4 years - will capture leap years
-                    if let Some(d) = d1.next_day() { d1 = d; }
+                for _ in 0..1500 {
+                    // 4 years - will capture leap years
+                    if let Some(d) = d1.next_day() {
+                        d1 = d;
+                    }
                     d2 = d1 - dur + dur;
                     assert!(d2.contains(d1));
                     d2 = d1 + dur - dur;
@@ -959,11 +899,10 @@ mod tests {
         let mut date = Date::from_calendar_date(2024, Month::February, 25).unwrap();
         let mut res = dur.normalise(date);
         assert_eq!(res, tar);
-        
+
         tar = Duration::new(0, 0, 1);
         date = Date::from_calendar_date(2022, Month::February, 25).unwrap();
         res = dur.normalise(date);
         assert_eq!(res, tar);
     }
-
 }

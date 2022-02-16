@@ -1,16 +1,16 @@
 use crate::timeline::Timeline;
-use std::ops::{Add, Sub, Mul, Div, Rem};
+use std::ops::{Add, Div, Mul, Rem, Sub};
 
 /// # TimeSeries
-/// 
+///
 /// A compound object that holds both a timeline and an array of values that
 /// meaningfully relate to the matching time periods from the timeline
-/// 
+///
 /// The timeline is held by reference, as it is assumed that a common timeline
 /// will apply to the entire model.
-/// 
+///
 /// The values are a vector of any type.
-/// 
+///
 /// TimeSeries objects are intended to be added, multiplied, subtracted and divided,
 /// using pairwise arithmetic operations to every element across the timeline. For
 /// this to work there are some requirements:
@@ -19,14 +19,14 @@ use std::ops::{Add, Sub, Mul, Div, Rem};
 /// * the underlying value type must support the arithmetic operation. For example,
 /// you cannot divide Strings and so you cannot divide TimeSeries of Strings
 /// * the timelines of the two TimeSeries objects must be the same. This would not
-/// normally be a problem in a common model where there is a single timeline for 
+/// normally be a problem in a common model where there is a single timeline for
 /// the entire model
-/// 
+///
 /// It's also worth noting that these arithmetic operations have been implemented
 /// on pointers to TimeSeries only. This is required as TimeSeries cannot implement
 /// the `Copy` trait, due it's wrapping of a vector, which does not implement the
 /// `Copy` trait. Without the `Copy` trait, all the arithmetic operations, and in fact
-/// any function call, move the operands. This would mean that after `let c = a + b;` 
+/// any function call, move the operands. This would mean that after `let c = a + b;`
 /// both `a` and `b` would no longer be available. Instead the only implemented operations
 /// are on references, so `let c = &a + &b;`, which allows `a` and `b` to persist beyond
 /// the addition call
@@ -37,56 +37,54 @@ pub struct TimeSeries<'a, T> {
 }
 
 impl<'a, T> TimeSeries<'a, T> {
-
     /// Create a new TimeSeries object
-    /// 
+    ///
     /// This method will throw an error if the length of the timeline provided and the
     /// length of the value vector do not match
     pub fn new(timeline: &'a Timeline, values: Vec<T>) -> Result<Self, &'static str> {
         match i32::try_from(values.len()) {
             Ok(l) => {
-                if l != timeline.len { return Err("Values do not match the timeline"); }
-            },
+                if l != timeline.len {
+                    return Err("Values do not match the timeline");
+                }
+            }
             Err(_) => {
                 return Err("Couldn't convert length of values into i32");
-            },
+            }
         }
-        Ok(TimeSeries {
-            timeline,
-            values,
-        })
+        Ok(TimeSeries { timeline, values })
     }
 
     /// Allows the user to provide a closure that defines the pairwise combination
     /// of two time series
-    /// 
+    ///
     /// Note that for simple artihmetic operations (+, -, *, /) these operators are already
     /// directly defined for the TimeSeries object, so that as long as you can apply the
     /// arithmetic operation on the underlying value type (e.g. you can't divide Strings)
     /// then you will be able to write something like this: `ts3 = &ts1 + &ts2;`
-    /// 
+    ///
     /// The closure cannot have side effects (i.e. change the inputs provided). This
     /// is to ensure that the `TimeSeries` being operated on, don't change in the process
     /// of generating a new `TimeSeries`
-    /// 
+    ///
     /// ---
     /// ### Example
-    /// ``` 
+    /// ```
     /// use timeseries::{TimeSeries, Timeline, DateRange, Period};
     /// use time::{Date, Month};
-    /// 
+    ///
     /// // Create a timeline
     /// let from = Date::from_calendar_date(2022, Month::January, 10).unwrap();
     /// let to = Date::from_calendar_date(2023, Month::January, 10).unwrap();
     /// let dr = DateRange::new(from, to);
     /// let tl = Timeline::new(dr, Period::Quarter);
-    /// 
+    ///
     /// // Create two timeseries
     /// let v1 = vec![1, 2, 3, 4];
     /// let ts1 = TimeSeries::new(&tl, v1).unwrap();
     /// let v2 = vec![5, 6, 7, 8];
     /// let ts2 = TimeSeries::new(&tl, v2).unwrap();
-    /// 
+    ///
     /// // Write a generic function that can be pairwise applied to the elements of a TS and apply it
     /// let op = |(&a, &b): (&i32, &i32)| -> i32 {
     ///     if a < 3 {
@@ -98,11 +96,16 @@ impl<'a, T> TimeSeries<'a, T> {
     /// let ts3 = ts1.apply(&ts2, op).unwrap();
     /// ```
     pub fn apply<F>(&self, other: &TimeSeries<'a, T>, func: F) -> Result<TimeSeries<'a, T>, &str>
-        where F: FnMut((&T, &T)) -> T,
-              T: Copy
+    where
+        F: FnMut((&T, &T)) -> T,
+        T: Copy,
     {
-        if self.timeline != other.timeline { return Err("Timelines do not match. Ensure a common timeline is being used"); }
-        let data = self.values.iter()
+        if self.timeline != other.timeline {
+            return Err("Timelines do not match. Ensure a common timeline is being used");
+        }
+        let data = self
+            .values
+            .iter()
             .zip(other.values.iter())
             .map(func)
             .collect();
@@ -129,11 +132,9 @@ impl<'a, T> TimeSeries<'a, T> {
     // TODO: implement a shift method so that operations can be done on time series objects that reference different time periods
     //  all combination methods currently offered are strictly limited to looking across isolated time periods
     //  need to think carefully about if this will expose any circularity issues
-
 }
 
 impl<'a> TimeSeries<'a, i32> {
-    
     /// For a given timline, create a TimeSeries of 32-bit integers, all with value 0
     pub fn empty_i(timeline: &'a Timeline) -> TimeSeries<'a, i32> {
         let values = vec![0; timeline.len as usize];
@@ -142,7 +143,6 @@ impl<'a> TimeSeries<'a, i32> {
 }
 
 impl<'a> TimeSeries<'a, f64> {
-    
     /// For a given timline, create a TimeSeries of 64-bit floats, all with value 0
     pub fn empty_f(timeline: &'a Timeline) -> TimeSeries<'a, f64> {
         let values = vec![0.0; timeline.len as usize];
@@ -151,13 +151,18 @@ impl<'a> TimeSeries<'a, f64> {
 }
 
 impl<'a, 'b, 'c, T> Add<&'c TimeSeries<'a, T>> for &'b TimeSeries<'a, T>
-    where T: Add + Add<Output = T> + Copy
+where
+    T: Add + Add<Output = T> + Copy,
 {
     type Output = Result<TimeSeries<'a, T>, &'static str>;
 
     fn add(self, rhs: &'c TimeSeries<'a, T>) -> Result<TimeSeries<'a, T>, &'static str> {
-        if self.timeline != rhs.timeline { return Err("Timelines do not match. Ensure a common timeline is being used"); }
-        let data = self.values.iter()
+        if self.timeline != rhs.timeline {
+            return Err("Timelines do not match. Ensure a common timeline is being used");
+        }
+        let data = self
+            .values
+            .iter()
             .zip(rhs.values.iter())
             .map(|(&a, &b)| a + b)
             .collect();
@@ -167,13 +172,18 @@ impl<'a, 'b, 'c, T> Add<&'c TimeSeries<'a, T>> for &'b TimeSeries<'a, T>
 }
 
 impl<'a, 'b, 'c, T> Sub<&'c TimeSeries<'a, T>> for &'b TimeSeries<'a, T>
-    where T: Sub + Sub<Output = T> + Copy
+where
+    T: Sub + Sub<Output = T> + Copy,
 {
     type Output = Result<TimeSeries<'a, T>, &'static str>;
 
     fn sub(self, rhs: &'c TimeSeries<'a, T>) -> Result<TimeSeries<'a, T>, &'static str> {
-        if self.timeline != rhs.timeline { return Err("Timelines do not match. Ensure a common timeline is being used"); }
-        let data = self.values.iter()
+        if self.timeline != rhs.timeline {
+            return Err("Timelines do not match. Ensure a common timeline is being used");
+        }
+        let data = self
+            .values
+            .iter()
             .zip(rhs.values.iter())
             .map(|(&a, &b)| a - b)
             .collect();
@@ -183,13 +193,18 @@ impl<'a, 'b, 'c, T> Sub<&'c TimeSeries<'a, T>> for &'b TimeSeries<'a, T>
 }
 
 impl<'a, 'b, 'c, T> Mul<&'c TimeSeries<'a, T>> for &'b TimeSeries<'a, T>
-    where T: Mul + Mul<Output = T> + Copy
+where
+    T: Mul + Mul<Output = T> + Copy,
 {
     type Output = Result<TimeSeries<'a, T>, &'static str>;
 
     fn mul(self, rhs: &'c TimeSeries<'a, T>) -> Result<TimeSeries<'a, T>, &'static str> {
-        if self.timeline != rhs.timeline { return Err("Timelines do not match. Ensure a common timeline is being used"); }
-        let data = self.values.iter()
+        if self.timeline != rhs.timeline {
+            return Err("Timelines do not match. Ensure a common timeline is being used");
+        }
+        let data = self
+            .values
+            .iter()
             .zip(rhs.values.iter())
             .map(|(&a, &b)| a * b)
             .collect();
@@ -199,13 +214,18 @@ impl<'a, 'b, 'c, T> Mul<&'c TimeSeries<'a, T>> for &'b TimeSeries<'a, T>
 }
 
 impl<'a, 'b, 'c, T> Div<&'c TimeSeries<'a, T>> for &'b TimeSeries<'a, T>
-    where T: Div + Div<Output = T> + Copy
+where
+    T: Div + Div<Output = T> + Copy,
 {
     type Output = Result<TimeSeries<'a, T>, &'static str>;
 
     fn div(self, rhs: &'c TimeSeries<'a, T>) -> Result<TimeSeries<'a, T>, &'static str> {
-        if self.timeline != rhs.timeline { return Err("Timelines do not match. Ensure a common timeline is being used"); }
-        let data = self.values.iter()
+        if self.timeline != rhs.timeline {
+            return Err("Timelines do not match. Ensure a common timeline is being used");
+        }
+        let data = self
+            .values
+            .iter()
             .zip(rhs.values.iter())
             .map(|(&a, &b)| a / b)
             .collect();
@@ -215,13 +235,18 @@ impl<'a, 'b, 'c, T> Div<&'c TimeSeries<'a, T>> for &'b TimeSeries<'a, T>
 }
 
 impl<'a, 'b, 'c, T> Rem<&'c TimeSeries<'a, T>> for &'b TimeSeries<'a, T>
-    where T: Rem + Rem<Output = T> + Copy
+where
+    T: Rem + Rem<Output = T> + Copy,
 {
     type Output = Result<TimeSeries<'a, T>, &'static str>;
 
     fn rem(self, rhs: &'c TimeSeries<'a, T>) -> Result<TimeSeries<'a, T>, &'static str> {
-        if self.timeline != rhs.timeline { return Err("Timelines do not match. Ensure a common timeline is being used"); }
-        let data = self.values.iter()
+        if self.timeline != rhs.timeline {
+            return Err("Timelines do not match. Ensure a common timeline is being used");
+        }
+        let data = self
+            .values
+            .iter()
             .zip(rhs.values.iter())
             .map(|(&a, &b)| a % b)
             .collect();
@@ -243,7 +268,6 @@ mod tests {
 
     #[test]
     fn create_timeseries() {
-
         // Create a timeline
         let from = Date::from_calendar_date(2022, Month::January, 10).unwrap();
         let to = Date::from_calendar_date(2023, Month::January, 10).unwrap();
@@ -260,7 +284,8 @@ mod tests {
             String::from("a"),
             String::from("loerm ipsum"),
             String::from("hello, World!"),
-            String::from("!£$%^&*()/|jkhsdaf`")];
+            String::from("!£$%^&*()/|jkhsdaf`"),
+        ];
         let ts2 = TimeSeries::new(&tl, v2);
         assert!(ts2.is_ok());
 
@@ -275,12 +300,10 @@ mod tests {
         let v3 = vec![1, 2, 3, 4, 5];
         let ts3 = TimeSeries::new(&tl, v3);
         assert!(ts3.is_err());
-
     }
 
     #[test]
     fn create_empty_timeseries() {
-        
         // Create a timeline
         let from = Date::from_calendar_date(2022, Month::January, 10).unwrap();
         let to = Date::from_calendar_date(2023, Month::January, 10).unwrap();
@@ -292,12 +315,10 @@ mod tests {
         assert_eq!(ts_i.values, vec![0, 0, 0, 0]);
         let ts_f = TimeSeries::empty_f(&tl);
         assert_eq!(ts_f.values, vec![0.0, 0.0, 0.0, 0.0]);
-
     }
 
     #[test]
     fn gen_func_timeseries() {
-        
         // Create a timeline
         let from = Date::from_calendar_date(2022, Month::January, 10).unwrap();
         let to = Date::from_calendar_date(2023, Month::January, 10).unwrap();
@@ -363,12 +384,10 @@ mod tests {
         assert!(ts12.is_ok());
         let ts12 = ts12.unwrap();
         assert_eq!(ts12.values, vec![1.0, 1.0, 1.0, 0.5]);
-
     }
 
     #[test]
     fn add_timeseries() {
-        
         // Create a timeline
         let from = Date::from_calendar_date(2022, Month::January, 10).unwrap();
         let to = Date::from_calendar_date(2023, Month::January, 10).unwrap();
@@ -420,12 +439,10 @@ mod tests {
         assert!(ts12.is_ok());
         let ts12 = ts12.unwrap();
         assert_eq!(ts12.values, vec![4.0, 1000.6, 4.5001, 2.5]);
-
     }
 
     #[test]
     fn sub_timeseries() {
-        
         // Create a timeline
         let from = Date::from_calendar_date(2022, Month::January, 10).unwrap();
         let to = Date::from_calendar_date(2023, Month::January, 10).unwrap();
@@ -480,12 +497,10 @@ mod tests {
         assert!((ts12.values[1] as f64 - 1000.6).abs() < 1e-10);
         assert!((ts12.values[2] as f64 + 4.4999).abs() < 1e-10);
         assert!((ts12.values[3] as f64 - 3.5).abs() < 1e-10);
-
     }
 
     #[test]
     fn mul_timeseries() {
-        
         // Create a timeline
         let from = Date::from_calendar_date(2022, Month::January, 10).unwrap();
         let to = Date::from_calendar_date(2023, Month::January, 10).unwrap();
@@ -540,12 +555,10 @@ mod tests {
         assert!((ts12.values[1] as f64 - 0.0).abs() < 1e-10);
         assert!((ts12.values[2] as f64 - 0.00045).abs() < 1e-10);
         assert!((ts12.values[3] as f64 + 1.5).abs() < 1e-10);
-
     }
 
     #[test]
     fn div_timeseries() {
-        
         // Create a timeline
         let from = Date::from_calendar_date(2022, Month::January, 10).unwrap();
         let to = Date::from_calendar_date(2023, Month::January, 10).unwrap();
@@ -600,12 +613,10 @@ mod tests {
         assert_eq!(ts12.values[1], f64::INFINITY);
         assert!((ts12.values[2] as f64 - 0.000022222222).abs() < 1e-10);
         assert!((ts12.values[3] as f64 + 6.0).abs() < 1e-10);
-
     }
 
     #[test]
     fn rem_timeseries() {
-        
         // Create a timeline
         let from = Date::from_calendar_date(2022, Month::January, 10).unwrap();
         let to = Date::from_calendar_date(2023, Month::January, 10).unwrap();
@@ -659,7 +670,5 @@ mod tests {
         assert!(ts12.is_ok());
         let ts12 = ts12.unwrap();
         assert_eq!(ts12.values, vec![4.0, 1000.6, 4.5001, 2.5]);*/
-
     }
-
 }
