@@ -628,6 +628,21 @@ mod tests {
     }
 
     #[test]
+    fn create_from_duration() {
+        let mut td = time::Duration::seconds_f64(10.0);
+        let mut d = crate::duration::Duration::from_time_duration(td);
+        assert_eq!((d.days(), d.months(), d.years()), (0, 0, 0));
+
+        td = time::Duration::seconds_f64(60.0 * 60.0 * 24.0);
+        d = crate::duration::Duration::from_time_duration(td);
+        assert_eq!((d.days(), d.months(), d.years()), (1, 0, 0));
+
+        td = time::Duration::seconds_f64(40.0 * 60.0 * 60.0 * 24.0);
+        d = crate::duration::Duration::from_time_duration(td);
+        assert_eq!((d.days(), d.months(), d.years()), (40, 0, 0));
+    }
+
+    #[test]
     fn add_duration() {
         let d1 = Duration::new(1, 2, 3);
         let d2 = Duration::new(100, 20, 50);
@@ -904,5 +919,38 @@ mod tests {
         date = Date::from_calendar_date(2022, Month::February, 25).unwrap();
         res = dur.normalise(date);
         assert_eq!(res, tar);
+    }
+
+    #[test]
+    fn format() {
+        let mut dur = Duration::new(1, 0, 0);
+        assert_eq!(format!("{:}", dur), "1 day");
+
+        dur = Duration::new(12, 0, 0);
+        assert_eq!(format!("{:}", dur), "12 days");
+
+        dur = Duration::new(0, 1, 0);
+        assert_eq!(format!("{:}", dur), "1 month");
+
+        dur = Duration::new(0, 5, 0);
+        assert_eq!(format!("{:}", dur), "5 months");
+
+        dur = Duration::new(0, 0, 1);
+        assert_eq!(format!("{:}", dur), "1 year");
+
+        dur = Duration::new(0, 0, 10);
+        assert_eq!(format!("{:}", dur), "10 years");
+
+        dur = Duration::new(2, 1, 0);
+        assert_eq!(format!("{:}", dur), "1 month, 2 days");
+
+        dur = Duration::new(1, 0, 4);
+        assert_eq!(format!("{:}", dur), "4 years, 1 day");
+
+        dur = Duration::new(0, 6, 1);
+        assert_eq!(format!("{:}", dur), "1 year, 6 months");
+
+        dur = Duration::new(1, 71, 4);
+        assert_eq!(format!("{:}", dur), "4 years, 71 months, 1 day");
     }
 }

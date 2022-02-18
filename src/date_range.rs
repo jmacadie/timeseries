@@ -29,7 +29,7 @@ impl DateRange {
         if from < to {
             Self { from, to }
         } else {
-            Self { to, from }
+            Self { from: to, to: from }
         }
     }
 
@@ -117,7 +117,7 @@ impl DateRange {
             None
         } else {
             let from = cmp::max(self.from, other.from);
-            let to = cmp::max(self.to, other.to);
+            let to = cmp::min(self.to, other.to);
             Some(DateRange::new(from, to))
         }
     }
@@ -149,17 +149,297 @@ mod tests {
 
     #[test]
     fn create_daterange() {
+        // Create the normal way round
         let d1 = Date::from_calendar_date(2022, Month::January, 15).unwrap();
         let d2 = Date::from_calendar_date(2022, Month::June, 15).unwrap();
-        let dr = DateRange::new(d1, d2);
-        assert_eq!(dr.from().day(), 15);
+        let mut dr = DateRange::new(d1, d2);
+        assert_eq!(
+            (dr.from().day(), dr.from().month(), dr.from().year()),
+            (15, Month::January, 2022),
+            "Normal way round - from",
+        );
+        assert_eq!(
+            (dr.to().day(), dr.to().month(), dr.to().year()),
+            (15, Month::June, 2022),
+            "Normal way round - to",
+        );
+
+        // Create with dates reversed
+        dr = DateRange::new(d2, d1);
+        assert_eq!(
+            (dr.from().day(), dr.from().month(), dr.from().year()),
+            (15, Month::January, 2022),
+            "Reversed dates - from",
+        );
+        assert_eq!(
+            (dr.to().day(), dr.to().month(), dr.to().year()),
+            (15, Month::June, 2022),
+            "Reversed dates - to",
+        );
     }
 
     #[test]
-    fn period_length() {}
+    fn create_from_duration() {
+        // Try 1 day
+        let d = Date::from_calendar_date(2022, Month::January, 15).unwrap();
+        let mut dur = Duration::new(1, 0, 0);
+        let mut dr = DateRange::from_duration(d, dur);
+        assert_eq!(
+            (dr.from().day(), dr.from().month(), dr.from().year()),
+            (15, Month::January, 2022)
+        );
+        assert_eq!(
+            (dr.to().day(), dr.to().month(), dr.to().year()),
+            (16, Month::January, 2022)
+        );
+
+        // Try 100 days
+        dur = Duration::new(100, 0, 0);
+        dr = DateRange::from_duration(d, dur);
+        assert_eq!(
+            (dr.from().day(), dr.from().month(), dr.from().year()),
+            (15, Month::January, 2022)
+        );
+        assert_eq!(
+            (dr.to().day(), dr.to().month(), dr.to().year()),
+            (25, Month::April, 2022)
+        );
+
+        // Try 1 month
+        dur = Duration::new(0, 1, 0);
+        dr = DateRange::from_duration(d, dur);
+        assert_eq!(
+            (dr.from().day(), dr.from().month(), dr.from().year()),
+            (15, Month::January, 2022)
+        );
+        assert_eq!(
+            (dr.to().day(), dr.to().month(), dr.to().year()),
+            (15, Month::February, 2022)
+        );
+
+        // Try 15 months
+        dur = Duration::new(0, 15, 0);
+        dr = DateRange::from_duration(d, dur);
+        assert_eq!(
+            (dr.from().day(), dr.from().month(), dr.from().year()),
+            (15, Month::January, 2022)
+        );
+        assert_eq!(
+            (dr.to().day(), dr.to().month(), dr.to().year()),
+            (15, Month::April, 2023)
+        );
+
+        // Try 1 year
+        dur = Duration::new(0, 0, 1);
+        dr = DateRange::from_duration(d, dur);
+        assert_eq!(
+            (dr.from().day(), dr.from().month(), dr.from().year()),
+            (15, Month::January, 2022)
+        );
+        assert_eq!(
+            (dr.to().day(), dr.to().month(), dr.to().year()),
+            (15, Month::January, 2023)
+        );
+    }
 
     #[test]
-    fn period_iterator() {}
+    fn as_duration() {
+        let d1 = Date::from_calendar_date(2022, Month::January, 15).unwrap();
+        let mut d2 = Date::from_calendar_date(2022, Month::January, 15).unwrap();
+        let mut dr = DateRange::new(d1, d2);
+        let mut dur = dr.as_duration();
+        assert_eq!((dur.days(), dur.months(), dur.years()), (0, 0, 0));
 
-    // TODO: write some proper tests!
+        d2 = Date::from_calendar_date(2022, Month::January, 20).unwrap();
+        dr = DateRange::new(d1, d2);
+        dur = dr.as_duration();
+        assert_eq!((dur.days(), dur.months(), dur.years()), (5, 0, 0));
+
+        d2 = Date::from_calendar_date(2022, Month::June, 15).unwrap();
+        dr = DateRange::new(d1, d2);
+        dur = dr.as_duration();
+        assert_eq!((dur.days(), dur.months(), dur.years()), (0, 5, 0));
+
+        d2 = Date::from_calendar_date(2024, Month::January, 15).unwrap();
+        dr = DateRange::new(d1, d2);
+        dur = dr.as_duration();
+        assert_eq!((dur.days(), dur.months(), dur.years()), (0, 0, 2));
+
+        d2 = Date::from_calendar_date(2024, Month::August, 12).unwrap();
+        dr = DateRange::new(d1, d2);
+        dur = dr.as_duration();
+        assert_eq!((dur.days(), dur.months(), dur.years()), (28, 6, 2));
+    }
+
+    #[test]
+    fn as_days() {
+        let d1 = Date::from_calendar_date(2022, Month::January, 15).unwrap();
+        let mut d2 = Date::from_calendar_date(2022, Month::January, 15).unwrap();
+        let mut dr = DateRange::new(d1, d2);
+        let mut i = dr.as_days();
+        assert_eq!(i, 0);
+
+        d2 = Date::from_calendar_date(2024, Month::April, 30).unwrap();
+        dr = DateRange::new(d1, d2);
+        i = dr.as_days();
+        assert_eq!(i, 836);
+    }
+
+    #[test]
+    fn as_weeks() {
+        let d1 = Date::from_calendar_date(2022, Month::January, 15).unwrap();
+        let mut d2 = Date::from_calendar_date(2022, Month::January, 15).unwrap();
+        let mut dr = DateRange::new(d1, d2);
+        let mut i = dr.as_weeks(true);
+        assert_eq!(i, 0);
+
+        d2 = Date::from_calendar_date(2024, Month::April, 30).unwrap();
+        dr = DateRange::new(d1, d2);
+        i = dr.as_weeks(false);
+        assert_eq!(i, 119);
+        i = dr.as_weeks(true);
+        assert_eq!(i, 120);
+    }
+
+    #[test]
+    fn as_months() {
+        let d1 = Date::from_calendar_date(2022, Month::January, 15).unwrap();
+        let mut d2 = Date::from_calendar_date(2022, Month::January, 15).unwrap();
+        let mut dr = DateRange::new(d1, d2);
+        let mut i = dr.as_months(true);
+        assert_eq!(i, 0);
+
+        d2 = Date::from_calendar_date(2024, Month::April, 30).unwrap();
+        dr = DateRange::new(d1, d2);
+        i = dr.as_months(false);
+        assert_eq!(i, 27);
+        i = dr.as_months(true);
+        assert_eq!(i, 28);
+    }
+
+    #[test]
+    fn as_quarters() {
+        let d1 = Date::from_calendar_date(2022, Month::January, 15).unwrap();
+        let mut d2 = Date::from_calendar_date(2022, Month::January, 15).unwrap();
+        let mut dr = DateRange::new(d1, d2);
+        let mut i = dr.as_quarters(true);
+        assert_eq!(i, 0);
+
+        d2 = Date::from_calendar_date(2024, Month::April, 30).unwrap();
+        dr = DateRange::new(d1, d2);
+        i = dr.as_quarters(false);
+        assert_eq!(i, 9);
+        i = dr.as_quarters(true);
+        assert_eq!(i, 10);
+    }
+
+    #[test]
+    fn as_years() {
+        let d1 = Date::from_calendar_date(2022, Month::January, 15).unwrap();
+        let mut d2 = Date::from_calendar_date(2022, Month::January, 15).unwrap();
+        let mut dr = DateRange::new(d1, d2);
+        let mut i = dr.as_years(true);
+        assert_eq!(i, 0);
+
+        d2 = Date::from_calendar_date(2024, Month::April, 30).unwrap();
+        dr = DateRange::new(d1, d2);
+        i = dr.as_years(false);
+        assert_eq!(i, 2);
+        i = dr.as_years(true);
+        assert_eq!(i, 3);
+    }
+
+    #[test]
+    fn intersect() {
+        let d1 = Date::from_calendar_date(2022, Month::January, 15).unwrap();
+        let d2 = Date::from_calendar_date(2023, Month::January, 15).unwrap();
+        let dr1 = DateRange::new(d1, d2);
+
+        // Disjoint - returns None
+        let mut d3 = Date::from_calendar_date(2020, Month::January, 15).unwrap();
+        let mut d4 = Date::from_calendar_date(2021, Month::January, 15).unwrap();
+        let mut dr2 = DateRange::new(d3, d4);
+        assert_eq!(dr1.intersect(&dr2), None);
+
+        // Overlap one side
+        d3 = Date::from_calendar_date(2020, Month::January, 15).unwrap();
+        d4 = Date::from_calendar_date(2022, Month::March, 15).unwrap();
+        dr2 = DateRange::new(d3, d4);
+        let mut dr_out = DateRange::new(d1, d4);
+        assert_eq!(dr1.intersect(&dr2), Some(dr_out));
+
+        // Range within start range
+        d3 = Date::from_calendar_date(2022, Month::January, 31).unwrap();
+        d4 = Date::from_calendar_date(2022, Month::March, 15).unwrap();
+        dr2 = DateRange::new(d3, d4);
+        dr_out = DateRange::new(d3, d4);
+        assert_eq!(dr1.intersect(&dr2), Some(dr_out));
+
+        // Range without start range
+        d3 = Date::from_calendar_date(2020, Month::January, 15).unwrap();
+        d4 = Date::from_calendar_date(2032, Month::March, 15).unwrap();
+        dr2 = DateRange::new(d3, d4);
+        dr_out = DateRange::new(d1, d2);
+        assert_eq!(dr1.intersect(&dr2), Some(dr_out));
+    }
+
+    #[test]
+    fn union() {
+        let d1 = Date::from_calendar_date(2022, Month::January, 15).unwrap();
+        let d2 = Date::from_calendar_date(2023, Month::January, 15).unwrap();
+        let dr1 = DateRange::new(d1, d2);
+
+        // Disjoint
+        let mut d3 = Date::from_calendar_date(2020, Month::January, 15).unwrap();
+        let mut d4 = Date::from_calendar_date(2021, Month::January, 15).unwrap();
+        let mut dr2 = DateRange::new(d3, d4);
+        let mut dr_out = DateRange::new(d3, d2);
+        assert_eq!(dr1.union(&dr2), dr_out, "Disjoint");
+
+        // Overlap one side
+        d3 = Date::from_calendar_date(2020, Month::January, 15).unwrap();
+        d4 = Date::from_calendar_date(2022, Month::March, 15).unwrap();
+        dr2 = DateRange::new(d3, d4);
+        dr_out = DateRange::new(d3, d2);
+        assert_eq!(dr1.union(&dr2), dr_out, "Overlap one side");
+
+        // Range within start range
+        d3 = Date::from_calendar_date(2022, Month::January, 31).unwrap();
+        d4 = Date::from_calendar_date(2022, Month::March, 15).unwrap();
+        dr2 = DateRange::new(d3, d4);
+        dr_out = DateRange::new(d1, d2);
+        assert_eq!(dr1.union(&dr2), dr_out, "Within");
+
+        // Range without start range
+        d3 = Date::from_calendar_date(2020, Month::January, 15).unwrap();
+        d4 = Date::from_calendar_date(2032, Month::March, 15).unwrap();
+        dr2 = DateRange::new(d3, d4);
+        dr_out = DateRange::new(d3, d4);
+        assert_eq!(dr1.union(&dr2), dr_out, "Without");
+    }
+
+    #[test]
+    fn contains() {
+        let d1 = Date::from_calendar_date(2022, Month::January, 15).unwrap();
+        let d2 = Date::from_calendar_date(2023, Month::January, 15).unwrap();
+        let dr = DateRange::new(d1, d2);
+
+        // Date before
+        let mut d3 = Date::from_calendar_date(2020, Month::January, 15).unwrap();
+        assert!(!dr.contains(d3));
+
+        // Start date
+        assert!(dr.contains(d1));
+
+        // Date within
+        d3 = Date::from_calendar_date(2022, Month::June, 15).unwrap();
+        assert!(dr.contains(d3));
+
+        // End date
+        assert!(!dr.contains(d2));
+
+        // Date after
+        d3 = Date::from_calendar_date(2027, Month::January, 15).unwrap();
+        assert!(!dr.contains(d3));
+    }
 }

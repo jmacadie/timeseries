@@ -61,14 +61,18 @@ impl fmt::Display for DateArithmeticOutput {
         for d in self.values.clone().iter() {
             output.push_str(&format!("{}; ", d));
         }
+        if output.chars().count() > 0 {
+            output.pop();
+            output.pop();
+        }
         f.write_str(&output)
     }
 }
 
-impl Iterator for DateArithmeticOutput {
+// TODO: Fix. This isn't working
+/*impl Iterator for DateArithmeticOutput {
     type Item = Date;
 
-    // TODO: Fix. This isn't working
     fn next(&mut self) -> Option<Self::Item> {
         let max = match self.len() {
             Some(l) => l - 1,
@@ -82,5 +86,117 @@ impl Iterator for DateArithmeticOutput {
             self.index += 1;
             Some(self.values[(self.index - 1) as usize])
         }
+    }
+}*/
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use time::Month;
+
+    #[test]
+    fn new() {
+        let d1 = Date::from_calendar_date(2022, Month::January, 15).unwrap();
+        let dao = DateArithmeticOutput::new(d1);
+        assert_eq!(dao.values[0], d1);
+        assert_eq!(dao.values.len(), 1);
+        assert_eq!(dao.index, 0);
+    }
+
+    #[test]
+    fn append() {
+        let d1 = Date::from_calendar_date(2022, Month::January, 15).unwrap();
+        let d2 = Date::from_calendar_date(2023, Month::January, 15).unwrap();
+        let d3 = Date::from_calendar_date(2024, Month::January, 15).unwrap();
+        let mut dao = DateArithmeticOutput::new(d1);
+
+        // Append a date & check
+        dao.append(d2);
+        assert_eq!(dao.values[0], d1);
+        assert_eq!(dao.values[1], d2);
+        assert_eq!(dao.values.len(), 2);
+        assert_eq!(dao.index, 0);
+
+        // Append another date & check again
+        dao.append(d3);
+        assert_eq!(dao.values[0], d1);
+        assert_eq!(dao.values[1], d2);
+        assert_eq!(dao.values[2], d3);
+        assert_eq!(dao.values.len(), 3);
+        assert_eq!(dao.index, 0);
+    }
+
+    #[test]
+    fn contains() {
+        let d1 = Date::from_calendar_date(2022, Month::January, 15).unwrap();
+        let d2 = Date::from_calendar_date(2023, Month::January, 15).unwrap();
+        let d3 = Date::from_calendar_date(2024, Month::January, 15).unwrap();
+        let d4 = Date::from_calendar_date(2025, Month::January, 15).unwrap();
+
+        let mut dao = DateArithmeticOutput::new(d1);
+        dao.append(d2);
+        dao.append(d3);
+
+        assert!(dao.contains(d1));
+        assert!(dao.contains(d2));
+        assert!(dao.contains(d3));
+        assert!(!dao.contains(d4));
+    }
+
+    #[test]
+    fn primary() {
+        let d1 = Date::from_calendar_date(2022, Month::January, 15).unwrap();
+        let d2 = Date::from_calendar_date(2023, Month::January, 15).unwrap();
+        let d3 = Date::from_calendar_date(2024, Month::January, 15).unwrap();
+        let d4 = Date::from_calendar_date(2025, Month::January, 15).unwrap();
+
+        let mut dao = DateArithmeticOutput::new(d1);
+        dao.append(d2);
+        dao.append(d3);
+
+        assert_eq!(dao.primary(), d1);
+        assert_ne!(dao.primary(), d2);
+        assert_ne!(dao.primary(), d3);
+        assert_ne!(dao.primary(), d4);
+    }
+
+    #[test]
+    fn value() {
+        let d1 = Date::from_calendar_date(2022, Month::January, 15).unwrap();
+        let d2 = Date::from_calendar_date(2023, Month::January, 15).unwrap();
+        let d3 = Date::from_calendar_date(2024, Month::January, 15).unwrap();
+        let d4 = Date::from_calendar_date(2025, Month::January, 15).unwrap();
+
+        let mut dao = DateArithmeticOutput::new(d1);
+        dao.append(d2);
+        dao.append(d3);
+
+        // Test regular access
+        assert_eq!(dao.value(0), Some(d1));
+        assert_eq!(dao.value(1), Some(d2));
+        assert_eq!(dao.value(2), Some(d3));
+        assert_eq!(dao.value(3), None);
+
+        // Add more than u8 values, which should revert everything to None
+        for _ in 0..u8::MAX {
+            dao.append(d4);
+        }
+        assert_eq!(dao.value(0), None);
+        assert_eq!(dao.value(1), None);
+        assert_eq!(dao.value(2), None);
+        assert_eq!(dao.value(3), None);
+    }
+
+    #[test]
+    fn format() {
+        let d1 = Date::from_calendar_date(2022, Month::January, 15).unwrap();
+        let d2 = Date::from_calendar_date(2023, Month::January, 15).unwrap();
+        let d3 = Date::from_calendar_date(2024, Month::January, 15).unwrap();
+
+        let mut dao = DateArithmeticOutput::new(d1);
+        dao.append(d2);
+        dao.append(d3);
+
+        assert_eq!(format!("{}", dao), "2022-01-15; 2023-01-15; 2024-01-15");
     }
 }

@@ -300,6 +300,21 @@ mod tests {
         let v3 = vec![1, 2, 3, 4, 5];
         let ts3 = TimeSeries::new(&tl, v3);
         assert!(ts3.is_err());
+        if let Err(e) = ts3 {
+            assert_eq!(e, "Values do not match the timeline")
+        }
+
+        // Create a timeseries that's longer than i32 (eek!) and check it errors out
+        let len: usize = 2_147_483_648;
+        let v4 = vec![0; len];
+
+        let ts4 = TimeSeries::new(&tl, v4);
+        assert!(ts4.is_err());
+        if let Err(e) = ts4 {
+            assert_eq!(e, "Couldn't convert length of values into i32")
+        }
+
+        // Create a timeseries that's just shorter than i32 and check it's ok
     }
 
     #[test]
@@ -354,7 +369,7 @@ mod tests {
         assert!(ts5.is_err());
 
         // Check adding TS with cloned timeline is OK
-        let tl3 = tl.clone();
+        let tl3 = tl;
         let v6 = vec![1, 5, 8, 13];
         let ts6 = TimeSeries::new(&tl3, v6).unwrap();
         let ts7 = ts1.apply(&ts6, op);
@@ -416,7 +431,7 @@ mod tests {
         assert!(ts5.is_err());
 
         // Check adding TS with cloned timeline is OK
-        let tl3 = tl.clone();
+        let tl3 = tl;
         let v6 = vec![1, 5, 8, 13];
         let ts6 = TimeSeries::new(&tl3, v6).unwrap();
         let ts7 = &ts6 + &ts1;
@@ -471,7 +486,7 @@ mod tests {
         assert!(ts5.is_err());
 
         // Check subracting TS with cloned timeline is OK
-        let tl3 = tl.clone();
+        let tl3 = tl;
         let v6 = vec![1, 5, 8, 13];
         let ts6 = TimeSeries::new(&tl3, v6).unwrap();
         let ts7 = &ts6 - &ts1;
@@ -529,7 +544,7 @@ mod tests {
         assert!(ts5.is_err());
 
         // Check multiplying TS with cloned timeline is OK
-        let tl3 = tl.clone();
+        let tl3 = tl;
         let v6 = vec![1, 5, 8, 13];
         let ts6 = TimeSeries::new(&tl3, v6).unwrap();
         let ts7 = &ts6 * &ts1;
@@ -587,7 +602,7 @@ mod tests {
         assert!(ts5.is_err());
 
         // Check dividing TS with cloned timeline is OK
-        let tl3 = tl.clone();
+        let tl3 = tl;
         let v6 = vec![1, 5, 8, 13];
         let ts6 = TimeSeries::new(&tl3, v6).unwrap();
         let ts7 = &ts6 / &ts1;
@@ -645,7 +660,7 @@ mod tests {
         assert!(ts5.is_err());
 
         // Check mod TS with cloned timeline is OK
-        let tl3 = tl.clone();
+        let tl3 = tl;
         let v6 = vec![1, 5, 8, 13];
         let ts6 = TimeSeries::new(&tl3, v6).unwrap();
         let ts7 = &ts6 % &ts1;
