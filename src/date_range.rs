@@ -49,6 +49,12 @@ impl DateRange {
     pub fn to(&self) -> Date {
         self.to
     }
+
+    /// Retun last valid day inside the `DateRange`, as by
+    /// definition `to` is just outside the `DateRange`
+    pub fn last_day(&self) -> Date {
+        self.to.previous_day().unwrap()
+    }
     // endregion getters
 
     // region: conversion
@@ -239,6 +245,58 @@ mod tests {
         assert_eq!(
             (dr.to().day(), dr.to().month(), dr.to().year()),
             (15, Month::January, 2023)
+        );
+    }
+
+    #[test]
+    fn last_day() {
+        // Test a normal date
+        let d1 = Date::from_calendar_date(2020, Month::January, 15).unwrap();
+        let mut d2 = Date::from_calendar_date(2022, Month::January, 15).unwrap();
+        let mut dr = DateRange::new(d1, d2);
+        assert_eq!(
+            (
+                dr.last_day().day(),
+                dr.last_day().month(),
+                dr.last_day().year()
+            ),
+            (14, Month::January, 2022)
+        );
+
+        // Test end of month - long
+        d2 = Date::from_calendar_date(2022, Month::November, 1).unwrap();
+        dr = DateRange::new(d1, d2);
+        assert_eq!(
+            (
+                dr.last_day().day(),
+                dr.last_day().month(),
+                dr.last_day().year()
+            ),
+            (31, Month::October, 2022)
+        );
+
+        // Test end of month - short
+        d2 = Date::from_calendar_date(2022, Month::May, 1).unwrap();
+        dr = DateRange::new(d1, d2);
+        assert_eq!(
+            (
+                dr.last_day().day(),
+                dr.last_day().month(),
+                dr.last_day().year()
+            ),
+            (30, Month::April, 2022)
+        );
+
+        // Test end of year
+        d2 = Date::from_calendar_date(2022, Month::January, 1).unwrap();
+        dr = DateRange::new(d1, d2);
+        assert_eq!(
+            (
+                dr.last_day().day(),
+                dr.last_day().month(),
+                dr.last_day().year()
+            ),
+            (31, Month::December, 2021)
         );
     }
 
