@@ -1,5 +1,13 @@
-use crate::timeline::Timeline;
-use std::ops::{Add, Div, Mul, Rem, Sub};
+use crate::{timeline::Timeline, DateRange};
+use std::ops::{Add, AddAssign, Div, Mul, Rem, Sub};
+use time::Date;
+
+pub enum AggType {
+    Add,
+    ArithmeticMean,
+    GeometricMean,
+    LinearInterpolation,
+}
 
 /// # TimeSeries
 ///
@@ -37,6 +45,8 @@ pub struct TimeSeries<'a, T> {
 }
 
 impl<'a, T> TimeSeries<'a, T> {
+    // region: constructors
+
     /// Create a new TimeSeries object
     ///
     /// This method will throw an error if the length of the timeline provided and the
@@ -55,6 +65,11 @@ impl<'a, T> TimeSeries<'a, T> {
         Ok(TimeSeries { timeline, values })
     }
 
+    // TODO: implement other ways of creating a TS object:
+    //  * just provide some values and then pad out to full timeline
+
+    // endregion constructors
+
     // region: getters
     /// Return timeseries value at date
     pub fn value(&self, date: Date) -> Option<&T> {
@@ -72,13 +87,99 @@ impl<'a, T> TimeSeries<'a, T> {
         self.values.get(start..=end)
     }
     // endregion getters
+
+    // region: change_period
+    /*pub fn change_periodicity(
+        &self,
+        timeline: &'a Timeline,
+        transform: AggType,
+    ) -> Result<TimeSeries<'a, T>, &'static str> {
+        if timeline.range.from() != self.timeline.range.from()
+            || timeline.range.to() != self.timeline.range.to()
+        {
+            return Err("Cannot transform timeline as start and end dates do not match");
+        }
+        if timeline = self.timeline {
+            return Ok(self.clone());
+        }
+        match transform {
+            AggType::Add => {
+                if timeline.periodicity > self.timeline.periodicity {
+                    for (i, val) in self.values.iter().enumerate() {
+                        if self.timeline.index(date)
+                    }
+                }
+            },
+            _ => {}
+        }
+    }*/
+
+    /*fn add_up(&self, timeline: &'a Timeline) -> TimeSeries<'a, T>
+    where
+        T: AddAssign + Add<Output = T> + Copy,
+    {
+        let target_range = timeline.next().unwrap();
+        let mut out: T;
+        let mut data: Vec<T> = Vec::with_capacity(timeline.len as usize);
+        for (val, range) in self.values.iter().zip(self.timeline.clone().into_iter()) {
+            if target_range.fully_contains(&range) {
+                out += *val;
+            } else {
+                if let Some(dr) = target_range.intersect(&range) {
+                    // TODO: figure out how to apportion for part periods
+                    //out += *val * dr.as_days() / range.as_days();
+                    //nxt = *val - *val * dr.as_days() / range.as_days();
+                }
+                data.push(out);
+                let Some(target_range) = timeline.next();
+            }
+        }
+        TimeSeries::new(timeline, data).unwrap()
+    }*/
+    // endregion change_period
+
+    // TODO: implement way to add values into an existing TS, maybe by providing a (Date, T) tuple
+
+    // TODO: be able to cast the values vector to other types, inside a new TS
+
+    // TODO: implement a way of building corkscrews with multiple operations
+
+    // TODO: implement a shift method so that operations can be done on time series objects that reference different time periods
+    //  all combination methods currently offered are strictly limited to looking across isolated time periods
+    //  need to think carefully about if this will expose any circularity issues
+}
+
+// region: empty_constuctors
+impl<'a> TimeSeries<'a, i32> {
+    /// For a given timline, create a TimeSeries of 32-bit integers, all with value 0
+    pub fn empty_i(timeline: &'a Timeline) -> TimeSeries<'a, i32> {
+        let values = vec![0; timeline.len as usize];
+        TimeSeries { timeline, values }
+    }
+}
+
+impl<'a> TimeSeries<'a, f64> {
+    /// For a given timline, create a TimeSeries of 64-bit floats, all with value 0
+    pub fn empty_f(timeline: &'a Timeline) -> TimeSeries<'a, f64> {
+        let values = vec![0.0; timeline.len as usize];
+        TimeSeries { timeline, values }
+    }
+}
+// endregion empty_constuctors
+
+// TODO: provide a means to have a generic calc on more than a pair of TS objects
+//  current implementation is strictly limited to two operations
+// region: generic_func
+
+impl<'a, T> TimeSeries<'a, T> {
     /// Allows the user to provide a closure that defines the pairwise combination
     /// of two time series
     ///
     /// Note that for simple artihmetic operations (+, -, *, /) these operators are already
     /// directly defined for the TimeSeries object, so that as long as you can apply the
     /// arithmetic operation on the underlying value type (e.g. you can't divide Strings)
-    /// then you will be able to write something like this: `ts3 = &ts1 + &ts2;`
+    /// then you will be able to write something like this: `ts3 = &ts1 + &ts2;` or
+    /// `ts3 = &ts1 + 10;`
     ///
     /// The closure cannot have side effects (i.e. change the inputs provided). This
     /// is to ensure that the `TimeSeries` being operated on, don't change in the process
@@ -129,43 +230,9 @@ impl<'a, T> TimeSeries<'a, T> {
         // Went with unwrap here as a TimeSeries created in these conditions should always be OK
         Ok(TimeSeries::new(self.timeline, data).unwrap())
     }
-
-    // TODO: implement other ways of creating a TS object:
-    //  * just provide some values and then pad out to full timeline
-
-    // TODO: provide a means to have a generic calc on more than a pair of TS objects
-    //  current implementation is strictly limited to two operations
-
-    // TODO: implement way to add values into an existing TS, maybe by providing a (Date, T) tuple
-
-    // TODO: be able to cast the values vector to other types, inside a new TS
-
-    // TODO: implement getters
-    //  * get single value at date
-    //  * get slice of the underlying TS for a sub-date rate
-
-    // TODO: implement a way of building corkscrews with multiple operations
-
-    // TODO: implement a shift method so that operations can be done on time series objects that reference different time periods
-    //  all combination methods currently offered are strictly limited to looking across isolated time periods
-    //  need to think carefully about if this will expose any circularity issues
 }
+// endregion generic_func
 
-impl<'a> TimeSeries<'a, i32> {
-    /// For a given timline, create a TimeSeries of 32-bit integers, all with value 0
-    pub fn empty_i(timeline: &'a Timeline) -> TimeSeries<'a, i32> {
-        let values = vec![0; timeline.len as usize];
-        TimeSeries { timeline, values }
-    }
-}
-
-impl<'a> TimeSeries<'a, f64> {
-    /// For a given timline, create a TimeSeries of 64-bit floats, all with value 0
-    pub fn empty_f(timeline: &'a Timeline) -> TimeSeries<'a, f64> {
-        let values = vec![0.0; timeline.len as usize];
-        TimeSeries { timeline, values }
-    }
-}
 // TODO: implement the OpAssign traits, such as AddAssign & DivAssign
 // region: arithmetic_ops
 

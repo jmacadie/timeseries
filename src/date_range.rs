@@ -128,6 +128,12 @@ impl DateRange {
         }
     }
 
+    /// Tests if the source date range contains the whole of the
+    /// second date range
+    pub fn fully_contains(&self, other: &DateRange) -> bool {
+        self.from <= other.from && self.to >= other.to
+    }
+
     // TODO: consider whether this should be an Option, with None being
     // returned where the two DateRanges are disjoint
     /// Returns the union of the two input `DateRange`. Since
