@@ -166,7 +166,11 @@ impl<'a> TimeSeries<'a, f64> {
         TimeSeries { timeline, values }
     }
 }
+// TODO: implement the OpAssign traits, such as AddAssign & DivAssign
+// region: arithmetic_ops
 
+// region: arithmetic_add
+// Add timeseries to timeseries
 impl<'a, 'b, 'c, T> Add<&'c TimeSeries<'a, T>> for &'b TimeSeries<'a, T>
 where
     T: Add + Add<Output = T> + Copy,
@@ -188,6 +192,23 @@ where
     }
 }
 
+// Add static value to timeseries
+impl<'a, 'b, T> Add<T> for &'b TimeSeries<'a, T>
+where
+    T: Add + Add<Output = T> + Copy,
+{
+    type Output = TimeSeries<'a, T>;
+
+    fn add(self, rhs: T) -> TimeSeries<'a, T> {
+        let data = self.values.iter().map(|&a| a + rhs).collect();
+        // Went with unwrap here as a TimeSeries created in these conditions should always be OK
+        TimeSeries::new(self.timeline, data).unwrap()
+    }
+}
+// endregion arithmetic_add
+
+// region: arithmetic_sub
+// Subtract timeseries from timeseries
 impl<'a, 'b, 'c, T> Sub<&'c TimeSeries<'a, T>> for &'b TimeSeries<'a, T>
 where
     T: Sub + Sub<Output = T> + Copy,
@@ -209,6 +230,23 @@ where
     }
 }
 
+// Subtract static value from timeseries
+impl<'a, 'b, T> Sub<T> for &'b TimeSeries<'a, T>
+where
+    T: Sub + Sub<Output = T> + Copy,
+{
+    type Output = TimeSeries<'a, T>;
+
+    fn sub(self, rhs: T) -> TimeSeries<'a, T> {
+        let data = self.values.iter().map(|&a| a - rhs).collect();
+        // Went with unwrap here as a TimeSeries created in these conditions should always be OK
+        TimeSeries::new(self.timeline, data).unwrap()
+    }
+}
+// endregion arithmetic_sub
+
+// region: arithmetic_mul
+// Multiply one timeseries with another timeseries
 impl<'a, 'b, 'c, T> Mul<&'c TimeSeries<'a, T>> for &'b TimeSeries<'a, T>
 where
     T: Mul + Mul<Output = T> + Copy,
@@ -230,6 +268,23 @@ where
     }
 }
 
+// Multiply one timeseries with a static value
+impl<'a, 'b, T> Mul<T> for &'b TimeSeries<'a, T>
+where
+    T: Mul + Mul<Output = T> + Copy,
+{
+    type Output = TimeSeries<'a, T>;
+
+    fn mul(self, rhs: T) -> TimeSeries<'a, T> {
+        let data = self.values.iter().map(|&a| a * rhs).collect();
+        // Went with unwrap here as a TimeSeries created in these conditions should always be OK
+        TimeSeries::new(self.timeline, data).unwrap()
+    }
+}
+// endregion arithmetic_mul
+
+// region: arithmetic_div
+// Divide one timeseries with another timeseries
 impl<'a, 'b, 'c, T> Div<&'c TimeSeries<'a, T>> for &'b TimeSeries<'a, T>
 where
     T: Div + Div<Output = T> + Copy,
@@ -251,6 +306,23 @@ where
     }
 }
 
+// Divide one timeseries with a static value
+impl<'a, 'b, T> Div<T> for &'b TimeSeries<'a, T>
+where
+    T: Div + Div<Output = T> + Copy,
+{
+    type Output = TimeSeries<'a, T>;
+
+    fn div(self, rhs: T) -> TimeSeries<'a, T> {
+        let data = self.values.iter().map(|&a| a / rhs).collect();
+        // Went with unwrap here as a TimeSeries created in these conditions should always be OK
+        TimeSeries::new(self.timeline, data).unwrap()
+    }
+}
+// endregion arithmetic_div
+
+// region: arithmetic_rem
+// Remainder of one timeseries from another timeseries
 impl<'a, 'b, 'c, T> Rem<&'c TimeSeries<'a, T>> for &'b TimeSeries<'a, T>
 where
     T: Rem + Rem<Output = T> + Copy,
@@ -272,16 +344,28 @@ where
     }
 }
 
-// TODO: implement the OpAssign traits, such as AddAssign & DivAssign
-// TODO: extend these operations to work with scalars as well
+// Remainder of one timeseries from a static value
+impl<'a, 'b, T> Rem<T> for &'b TimeSeries<'a, T>
+where
+    T: Rem + Rem<Output = T> + Copy,
+{
+    type Output = TimeSeries<'a, T>;
+
+    fn rem(self, rhs: T) -> TimeSeries<'a, T> {
+        let data = self.values.iter().map(|&a| a % rhs).collect();
+        // Went with unwrap here as a TimeSeries created in these conditions should always be OK
+        TimeSeries::new(self.timeline, data).unwrap()
+    }
+}
+// endregion arithmetic_rem
+// endregion arithmetic_ops
 
 #[cfg(test)]
 mod tests {
 
+    use super::*;
     use crate::{DateRange, Period};
     use time::{Date, Month};
-
-    use super::*;
 
     #[test]
     fn create_timeseries() {
@@ -545,6 +629,35 @@ mod tests {
     }
 
     #[test]
+    fn add_static() {
+        // Create a timeline
+        let from = Date::from_calendar_date(2022, Month::January, 10).unwrap();
+        let to = Date::from_calendar_date(2023, Month::January, 10).unwrap();
+        let dr = DateRange::new(from, to);
+        let tl = Timeline::new(dr, Period::Quarter);
+
+        // Create two timeseries
+        let v1 = vec![1, 2, 3, 4];
+        let ts1 = TimeSeries::new(&tl, v1).unwrap();
+
+        // Add two TS and check OK
+        let ts3 = &ts1 + 5;
+        assert_eq!(ts3.values, vec![6, 7, 8, 9]);
+
+        // Check adding negative numbers and zero
+        let v8 = vec![-1, -2, 0, -100];
+        let ts8 = TimeSeries::new(&tl, v8).unwrap();
+        let ts9 = &ts8 + 10;
+        assert_eq!(ts9.values, vec![9, 8, 10, -90]);
+
+        // Check adding floats
+        let v10 = vec![1.2, 1000.6, 0.0001, 3.0];
+        let ts10 = TimeSeries::new(&tl, v10).unwrap();
+        let ts12 = &ts10 + 1.0;
+        assert_eq!(ts12.values, vec![2.2, 1001.6, 1.0001, 4.0]);
+    }
+
+    #[test]
     fn sub_timeseries() {
         // Create a timeline
         let from = Date::from_calendar_date(2022, Month::January, 10).unwrap();
@@ -600,6 +713,38 @@ mod tests {
         assert!((ts12.values[1] as f64 - 1000.6).abs() < 1e-10);
         assert!((ts12.values[2] as f64 + 4.4999).abs() < 1e-10);
         assert!((ts12.values[3] as f64 - 3.5).abs() < 1e-10);
+    }
+
+    #[test]
+    fn sub_static() {
+        // Create a timeline
+        let from = Date::from_calendar_date(2022, Month::January, 10).unwrap();
+        let to = Date::from_calendar_date(2023, Month::January, 10).unwrap();
+        let dr = DateRange::new(from, to);
+        let tl = Timeline::new(dr, Period::Quarter);
+
+        // Create timeseries
+        let v1 = vec![1, 2, 3, 4];
+        let ts1 = TimeSeries::new(&tl, v1).unwrap();
+
+        // Subtract and check answers
+        let ts3 = &ts1 - 1;
+        assert_eq!(ts3.values, vec![0, 1, 2, 3]);
+
+        // Check subtracting negative numbers and zero
+        let v8 = vec![-1, -2, 0, -100];
+        let ts8 = TimeSeries::new(&tl, v8).unwrap();
+        let ts9 = &ts8 - 10;
+        assert_eq!(ts9.values, vec![-11, -12, -10, -110]);
+
+        // Check subtracting floats
+        let v10 = vec![1.2, 1000.6, 0.0001, 3.0];
+        let ts10 = TimeSeries::new(&tl, v10).unwrap();
+        let ts12 = &ts10 - 1.0;
+        assert!((ts12.values[0] as f64 - 0.2).abs() < 1e-10);
+        assert!((ts12.values[1] as f64 - 999.6).abs() < 1e-10);
+        assert!((ts12.values[2] as f64 + 0.9999).abs() < 1e-10);
+        assert!((ts12.values[3] as f64 - 2.0).abs() < 1e-10);
     }
 
     #[test]
@@ -661,6 +806,38 @@ mod tests {
     }
 
     #[test]
+    fn mul_static() {
+        // Create a timeline
+        let from = Date::from_calendar_date(2022, Month::January, 10).unwrap();
+        let to = Date::from_calendar_date(2023, Month::January, 10).unwrap();
+        let dr = DateRange::new(from, to);
+        let tl = Timeline::new(dr, Period::Quarter);
+
+        // Create two timeseries
+        let v1 = vec![1, 2, 3, 4];
+        let ts1 = TimeSeries::new(&tl, v1).unwrap();
+
+        // Multiply two TS and check OK
+        let ts3 = &ts1 * 2;
+        assert_eq!(ts3.values, vec![2, 4, 6, 8]);
+
+        // Check multiplying negative numbers and zero
+        let v8 = vec![-1, -2, 0, -100];
+        let ts8 = TimeSeries::new(&tl, v8).unwrap();
+        let ts9 = &ts8 * 2;
+        assert_eq!(ts9.values, vec![-2, -4, 0, -200]);
+
+        // Check multiplying floats
+        let v10 = vec![1.2, 1000.6, 0.0001, 3.0];
+        let ts10 = TimeSeries::new(&tl, v10).unwrap();
+        let ts12 = &ts10 * 2.0;
+        assert!((ts12.values[0] as f64 - 2.4).abs() < 1e-10);
+        assert!((ts12.values[1] as f64 - 2001.2).abs() < 1e-10);
+        assert!((ts12.values[2] as f64 - 0.0002).abs() < 1e-10);
+        assert!((ts12.values[3] as f64 - 6.0).abs() < 1e-10);
+    }
+
+    #[test]
     fn div_timeseries() {
         // Create a timeline
         let from = Date::from_calendar_date(2022, Month::January, 10).unwrap();
@@ -719,6 +896,36 @@ mod tests {
     }
 
     #[test]
+    fn div_static() {
+        // Create a timeline
+        let from = Date::from_calendar_date(2022, Month::January, 10).unwrap();
+        let to = Date::from_calendar_date(2023, Month::January, 10).unwrap();
+        let dr = DateRange::new(from, to);
+        let tl = Timeline::new(dr, Period::Quarter);
+
+        // Create two timeseries
+        let v1 = vec![1, 2, 3, 4];
+        let ts1 = TimeSeries::new(&tl, v1).unwrap();
+        let ts3 = &ts1 / 2;
+        assert_eq!(ts3.values, vec![0, 1, 1, 2]);
+
+        // Check dividing negative numbers and zero
+        let v8 = vec![-1, -2, 0, -100];
+        let ts8 = TimeSeries::new(&tl, v8).unwrap();
+        let ts9 = &ts8 / 2;
+        assert_eq!(ts9.values, vec![0, -1, 0, -50]);
+
+        // Check dividing floats
+        let v10 = vec![1.2, 1000.6, 0.0001, 3.0];
+        let ts10 = TimeSeries::new(&tl, v10).unwrap();
+        let ts12 = &ts10 / 2.0;
+        assert!((ts12.values[0] as f64 - 0.6).abs() < 1e-10);
+        assert!((ts12.values[1] as f64 - 500.3).abs() < 1e-10);
+        assert!((ts12.values[2] as f64 - 0.00005).abs() < 1e-10);
+        assert!((ts12.values[3] as f64 - 1.5).abs() < 1e-10);
+    }
+
+    #[test]
     fn rem_timeseries() {
         // Create a timeline
         let from = Date::from_calendar_date(2022, Month::January, 10).unwrap();
@@ -762,6 +969,39 @@ mod tests {
         assert!(ts9.is_ok());
         let ts9 = ts9.unwrap();
         assert_eq!(ts9.values, vec![-1, -2, 0, -1]);
+
+        // Check mod floats
+        // CBA
+        /*let v10 = vec![1.2, 1000.6, 0.0001, 3.0];
+        let v11 = vec![2.8, 0.0, 4.5, -0.5];
+        let ts10 = TimeSeries::new(&tl, v10).unwrap();
+        let ts11 = TimeSeries::new(&tl, v11).unwrap();
+        let ts12 = &ts10 % &ts11;
+        assert!(ts12.is_ok());
+        let ts12 = ts12.unwrap();
+        assert_eq!(ts12.values, vec![4.0, 1000.6, 4.5001, 2.5]);*/
+    }
+
+    #[test]
+    fn rem_static() {
+        // Create a timeline
+        let from = Date::from_calendar_date(2022, Month::January, 10).unwrap();
+        let to = Date::from_calendar_date(2023, Month::January, 10).unwrap();
+        let dr = DateRange::new(from, to);
+        let tl = Timeline::new(dr, Period::Quarter);
+
+        // Create two timeseries
+        let v1 = vec![1, 2, 3, 4];
+        let ts1 = TimeSeries::new(&tl, v1).unwrap();
+        let ts3 = &ts1 % 2;
+        assert_eq!(ts3.values, vec![1, 0, 1, 0]);
+
+        // Check mod negative numbers and zero
+        // Not sure this is that useful, would we ever be doing this???
+        let v8 = vec![-1, -2, 0, -100];
+        let ts8 = TimeSeries::new(&tl, v8).unwrap();
+        let ts9 = &ts8 % 2;
+        assert_eq!(ts9.values, vec![-1, 0, 0, 0]);
 
         // Check mod floats
         // CBA
