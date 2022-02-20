@@ -119,7 +119,7 @@ impl DateRange {
     /// of the two input `DateRange`. Is an Option to allow for
     /// the the two ranges not overlapping, in which case None is returned
     pub fn intersect(&self, other: &DateRange) -> Option<DateRange> {
-        if other.from > self.to || other.to < self.from {
+        if other.from >= self.to || other.to <= self.from {
             None
         } else {
             let from = cmp::max(self.from, other.from);
@@ -417,6 +417,12 @@ mod tests {
         let mut d3 = Date::from_calendar_date(2020, Month::January, 15).unwrap();
         let mut d4 = Date::from_calendar_date(2021, Month::January, 15).unwrap();
         let mut dr2 = DateRange::new(d3, d4);
+        assert_eq!(dr1.intersect(&dr2), None);
+
+        // Touching - returns None
+        d3 = Date::from_calendar_date(2020, Month::January, 15).unwrap();
+        d4 = Date::from_calendar_date(2022, Month::January, 15).unwrap();
+        dr2 = DateRange::new(d3, d4);
         assert_eq!(dr1.intersect(&dr2), None);
 
         // Overlap one side
