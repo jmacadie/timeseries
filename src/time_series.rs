@@ -55,6 +55,23 @@ impl<'a, T> TimeSeries<'a, T> {
         Ok(TimeSeries { timeline, values })
     }
 
+    // region: getters
+    /// Return timeseries value at date
+    pub fn value(&self, date: Date) -> Option<&T> {
+        let i = self.timeline.index_at(date)?;
+        self.values.get(i as usize)
+    }
+
+    /// Return a reference to the underlying timeseries values
+    /// for the values that span the given date range. Note that
+    /// the whole of the supplied date range must lie within the
+    /// timeline of the `TimeSeries` or rhis will return `None`
+    pub fn value_range(&self, dr: DateRange) -> Option<&[T]> {
+        let start = self.timeline.index_at(dr.from())? as usize;
+        let end = self.timeline.index_at(dr.to())? as usize;
+        self.values.get(start..=end)
+    }
+    // endregion getters
     /// Allows the user to provide a closure that defines the pairwise combination
     /// of two time series
     ///
@@ -330,6 +347,77 @@ mod tests {
         assert_eq!(ts_i.values, vec![0, 0, 0, 0]);
         let ts_f = TimeSeries::empty_f(&tl);
         assert_eq!(ts_f.values, vec![0.0, 0.0, 0.0, 0.0]);
+    }
+
+    #[test]
+    fn value() {
+        // Create timeseries
+        let from = Date::from_calendar_date(2022, Month::January, 10).unwrap();
+        let to = Date::from_calendar_date(2023, Month::January, 10).unwrap();
+        let dr = DateRange::new(from, to);
+        let tl = Timeline::new(dr, Period::Quarter);
+        let ts = TimeSeries::new(&tl, vec![1, 2, 3, 4]).unwrap();
+
+        // Check first date
+        let mut d = Date::from_calendar_date(2022, Month::January, 10).unwrap();
+        assert_eq!(ts.value(d), Some(&1));
+
+        // Check date in first period
+        d = Date::from_calendar_date(2022, Month::February, 28).unwrap();
+        assert_eq!(ts.value(d), Some(&1));
+
+        // Check first date in second period
+        d = Date::from_calendar_date(2022, Month::April, 10).unwrap();
+        assert_eq!(ts.value(d), Some(&2));
+
+        // Check last date
+        d = to.previous_day().unwrap();
+        assert_eq!(ts.value(d), Some(&4));
+
+        // Check out of bounds
+        d = to;
+        assert!(ts.value(d).is_none());
+        d = from.previous_day().unwrap();
+        assert!(ts.value(d).is_none());
+    }
+
+    #[test]
+    fn value_range() {
+        // Create timeseries
+        let from = Date::from_calendar_date(2022, Month::January, 10).unwrap();
+        let to = Date::from_calendar_date(2023, Month::January, 10).unwrap();
+        let dr = DateRange::new(from, to);
+        let tl = Timeline::new(dr, Period::Quarter);
+        let ts = TimeSeries::new(&tl, vec![1, 2, 3, 4]).unwrap();
+
+        // Check first date
+        let mut d1 = Date::from_calendar_date(2022, Month::January, 10).unwrap();
+        let mut d2 = Date::from_calendar_date(2022, Month::February, 10).unwrap();
+        let mut dr1 = DateRange::new(d1, d2);
+        assert_eq!(ts.value_range(dr1), Some(&[1][..]));
+
+        // Check whole range
+        d1 = from;
+        d2 = dr.last_day();
+        dr1 = DateRange::new(d1, d2);
+        assert_eq!(ts.value_range(dr1), Some(&[1, 2, 3, 4][..]));
+
+        // Check half range
+        d1 = Date::from_calendar_date(2022, Month::August, 10).unwrap();
+        d2 = dr.last_day();
+        dr1 = DateRange::new(d1, d2);
+        assert_eq!(ts.value_range(dr1), Some(&[3, 4][..]));
+
+        // Check out of bounds
+        d1 = Date::from_calendar_date(2022, Month::August, 10).unwrap();
+        d2 = to;
+        dr1 = DateRange::new(d1, d2);
+        assert!(ts.value_range(dr1).is_none());
+
+        d1 = from.previous_day().unwrap();
+        d2 = dr.last_day();
+        dr1 = DateRange::new(d1, d2);
+        assert!(ts.value_range(dr1).is_none());
     }
 
     #[test]
