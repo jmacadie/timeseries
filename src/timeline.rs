@@ -133,7 +133,7 @@ impl Iterator for Timeline {
                 }
             }
             Period::Week => {
-                for _ in 1..8 {
+                for _ in 0..7 {
                     next_date = match next_date.next_day() {
                         Some(d) => d,
                         None => {
@@ -158,7 +158,7 @@ impl Iterator for Timeline {
             }
             Period::Quarter => {
                 let (mut y, mut m, mut d) = next_date.to_calendar_date();
-                for _ in 1..4 {
+                for _ in 0..3 {
                     m = m.next();
                     if m == Month::January {
                         y += 1
