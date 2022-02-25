@@ -2,6 +2,20 @@ use core::fmt;
 use std::convert::TryFrom;
 use time::Date;
 
+/// # DateArithmeticOutput
+///
+/// The requirement for `Date` plus / minus a `Duration`
+/// to be reversible _e.g. 30th Mar minus 1 month is
+/// 28th Feb, so 28th Feb has to (at least) equal 30th
+/// Mar_ gives rise to multiple possible results for
+/// some additions and subtractions. To handle this
+/// ambiguity, we use this struct to wrap a vector of
+/// all possible results from the arithmetic operation.
+///
+/// See `Duration` documentation for further explanation
+///
+/// The most likely result can always be accessed by
+/// calling the `.primary()` method
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DateArithmeticOutput {
     values: Vec<Date>,
