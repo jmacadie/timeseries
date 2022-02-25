@@ -199,10 +199,14 @@ where
         }
     }*/
 
-    /*fn add_up(&self, timeline: &'a Timeline) -> TimeSeries<'a, T>
+    /*fn add_up(&self, target_timeline: &'a Timeline) -> Self
     where
         T: AddAssign + Add<Output = T> + Copy,
     {
+        // Loop through every per
+        for i in 0..self.timeline.len {
+            let target_range = self.timeline.index(i).unwrap();
+        }
         let target_range = timeline.next().unwrap();
         let mut out: T;
         let mut data: Vec<T> = Vec::with_capacity(timeline.len as usize);
@@ -223,8 +227,14 @@ where
     }*/
     // endregion change_period
 
-    // TODO: implement way to add values into an existing TS, maybe by providing a (Date, T) tuple
-    // region: update
+    // TODO: implement a way of building corkscrews with multiple operations
+}
+
+// region: update
+impl<'a, T> TimeSeries<'a, T> {
+    /// Update the `TimeSeries` in place. Will over-write the value at the
+    /// date with the supplied value. Use `.update_add()` if you want to add the
+    /// new value to the current value at the date
     pub fn update(&mut self, new_val: (Date, T)) {
         if !self.timeline.range.contains(new_val.0) {
             return;
@@ -232,10 +242,23 @@ where
         let idx = self.timeline.index_at(new_val.0).unwrap();
         self.values[idx] = new_val.1;
     }
-    // endregion update
-
-    // TODO: implement a way of building corkscrews with multiple operations
 }
+
+impl<'a, T> TimeSeries<'a, T>
+where
+    T: Add + Add<Output = T> + Copy,
+{
+    /// Update the `TimeSeries` in place. Will add the supplied value to
+    /// the value already at the date
+    pub fn update_add(&mut self, new_val: (Date, T)) {
+        if !self.timeline.range.contains(new_val.0) {
+            return;
+        }
+        let idx = self.timeline.index_at(new_val.0).unwrap();
+        self.values[idx] = self.values[idx] + new_val.1;
+    }
+}
+// endregion update
 
 // region: cast_values
 impl<'a, T> TimeSeries<'a, T>
@@ -759,6 +782,44 @@ mod tests {
         d = to;
         ts1.update((d, 200));
         assert_eq!(ts1.values, vec![100, -5, 3, 0]);
+    }
+
+    #[test]
+    fn update_add() {
+        // Create a timeline
+        let from = Date::from_calendar_date(2022, Month::January, 10).unwrap();
+        let to = Date::from_calendar_date(2023, Month::January, 10).unwrap();
+        let dr = DateRange::new(from, to);
+        let tl = Timeline::new(dr, Period::Quarter);
+
+        // Create a timeseries
+        let v1 = vec![1, 2, 3, 4];
+        let mut ts1 = TimeSeries::new(&tl, v1).unwrap();
+
+        // Before
+        let mut d = Date::from_calendar_date(2022, Month::January, 9).unwrap();
+        ts1.update_add((d, 1000));
+        assert_eq!(ts1.values, vec![1, 2, 3, 4]);
+
+        // First day
+        d = from;
+        ts1.update_add((d, 100));
+        assert_eq!(ts1.values, vec![101, 2, 3, 4]);
+
+        // Middle
+        d = Date::from_calendar_date(2022, Month::April, 10).unwrap();
+        ts1.update_add((d, -5));
+        assert_eq!(ts1.values, vec![101, -3, 3, 4]);
+
+        // Last day
+        d = dr.last_day();
+        ts1.update_add((d, -4));
+        assert_eq!(ts1.values, vec![101, -3, 3, 0]);
+
+        // After
+        d = to;
+        ts1.update_add((d, 200));
+        assert_eq!(ts1.values, vec![101, -3, 3, 0]);
     }
 
     #[test]
