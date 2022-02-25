@@ -1,4 +1,5 @@
-use crate::{timeline::Timeline, DateRange};
+use crate::{duration::Duration, timeline::Timeline, DateRange, Period};
+use std::cmp;
 use std::ops::{Add, Div, Mul, Rem, Sub};
 use time::Date;
 
@@ -44,7 +45,10 @@ pub struct TimeSeries<'a, T> {
     values: Vec<T>,
 }
 
-impl<'a, T> TimeSeries<'a, T> {
+impl<'a, T> TimeSeries<'a, T>
+where
+    T: Clone,
+{
     // region: constructors
 
     /// Create a new TimeSeries object
@@ -67,6 +71,87 @@ impl<'a, T> TimeSeries<'a, T> {
 
     // TODO: implement other ways of creating a TS object:
     //  * just provide some values and then pad out to full timeline
+
+    /// Shift the TimeSeries by a fixed duration. Intened to use values in
+    /// different periods e.g. operate on value from 6 months ago.
+    ///
+    /// This operation will be lossy in the sense that some values will be
+    /// shifted off the end of the timeline, and will get discarded. On the
+    /// other side, new values will be brought into scope, which is what the
+    /// pad value is required for
+    pub fn shift(&self, shift: Duration, pad: T) -> Result<Self, &'static str> {
+        let shift_len: usize;
+        match self.timeline.periodicity {
+            Period::Year => {
+                if shift.days() > 0 || shift.months() > 0 {
+                    return Err("Shift provided isn't a whole number of years");
+                }
+                shift_len = match shift.years() {
+                    l if l < 0 => cmp::min(-l as usize, self.values.len()),
+                    l if l > 0 => cmp::min(l as usize, self.values.len()),
+                    _ => 0,
+                };
+            }
+            Period::Quarter => {
+                if shift.days() > 0 || shift.months() % 3 > 0 {
+                    return Err("Shift provided isn't a whole number of quarters");
+                }
+                shift_len = match shift.years() * 4 + shift.months() / 3 {
+                    l if l < 0 => cmp::min(-l as usize, self.values.len()),
+                    l if l > 0 => cmp::min(l as usize, self.values.len()),
+                    _ => 0,
+                };
+            }
+            Period::Month => {
+                if shift.days() > 0 {
+                    return Err("Shift provided isn't a whole number of months");
+                }
+                shift_len = match shift.years() * 12 + shift.months() {
+                    l if l < 0 => cmp::min(-l as usize, self.values.len()),
+                    l if l > 0 => cmp::min(l as usize, self.values.len()),
+                    _ => 0,
+                };
+            }
+            Period::Week => {
+                if shift.years() > 0 || shift.months() > 0 || shift.days() % 7 > 0 {
+                    return Err("Shift provided can only be multiples of 7 days");
+                }
+                shift_len = match shift.days() / 7 {
+                    l if l < 0 => cmp::min(-l as usize, self.values.len()),
+                    l if l > 0 => cmp::min(l as usize, self.values.len()),
+                    _ => 0,
+                };
+            }
+            Period::Day => {
+                if shift.years() > 0 || shift.months() > 0 {
+                    return Err("Shift provided can only contain days");
+                }
+                shift_len = match shift.days() {
+                    l if l < 0 => cmp::min(-l as usize, self.values.len()),
+                    l if l > 0 => cmp::min(l as usize, self.values.len()),
+                    _ => 0,
+                };
+            }
+        };
+        let mut data = Vec::with_capacity(self.values.len());
+        let data_range = self.values.len() - shift_len;
+        if shift.forwards() {
+            for i in shift_len..self.values.len() {
+                data.push(self.values[i].clone());
+            }
+            for _ in 0..shift_len {
+                data.push(pad.clone());
+            }
+        } else {
+            for _ in 0..shift_len {
+                data.push(pad.clone());
+            }
+            for i in 0..data_range {
+                data.push(self.values[i].clone());
+            }
+        }
+        Ok(Self::new(self.timeline, data).unwrap())
+    }
 
     // endregion constructors
 
@@ -141,10 +226,6 @@ impl<'a, T> TimeSeries<'a, T> {
     // TODO: implement way to add values into an existing TS, maybe by providing a (Date, T) tuple
 
     // TODO: implement a way of building corkscrews with multiple operations
-
-    // TODO: implement a shift method so that operations can be done on time series objects that reference different time periods
-    //  all combination methods currently offered are strictly limited to looking across isolated time periods
-    //  need to think carefully about if this will expose any circularity issues
 }
 
 // region: cast_values
@@ -631,6 +712,295 @@ mod tests {
         let ts1 = TimeSeries::new(&tl, v1).unwrap();
 
         assert_eq!(ts1.cast_i32().values, vec![1, 1, 0, 1]);
+    }
+
+    #[test]
+    fn shift_years() {
+        // Create a timeline
+        let from = Date::from_calendar_date(2022, Month::January, 10).unwrap();
+        let to = Date::from_calendar_date(2030, Month::January, 10).unwrap();
+        let dr = DateRange::new(from, to);
+        let tl = Timeline::new(dr, Period::Year);
+
+        // Create a timeseries
+        let v1 = vec![1, 2, 3, 4, 5, 6, 7, 8];
+        let ts1 = TimeSeries::new(&tl, v1).unwrap();
+
+        // Create a shift duration and apply it
+        let mut shift = Duration::new(0, 0, 4);
+        let mut tsr = ts1.shift(shift, 0);
+        assert!(tsr.is_ok());
+        let mut ts2 = tsr.unwrap();
+        assert_eq!(ts2.values, vec![5, 6, 7, 8, 0, 0, 0, 0]);
+
+        // Test negative shift duration
+        shift = Duration::new(0, 0, -4);
+        ts2 = ts1.shift(shift, 0).unwrap();
+        assert_eq!(ts2.values, vec![0, 0, 0, 0, 1, 2, 3, 4]);
+
+        // Test different pad value
+        shift = Duration::new(0, 0, -4);
+        ts2 = ts1.shift(shift, 1000).unwrap();
+        assert_eq!(ts2.values, vec![1000, 1000, 1000, 1000, 1, 2, 3, 4]);
+
+        // Test with shift greater than timeline
+        shift = Duration::new(0, 0, 100);
+        ts2 = ts1.shift(shift, 0).unwrap();
+        assert_eq!(ts2.values, vec![0; tl.len as usize]);
+        shift = Duration::new(0, 0, -100);
+        ts2 = ts1.shift(shift, 0).unwrap();
+        assert_eq!(ts2.values, vec![0; tl.len as usize]);
+
+        // Test duration with days: should error
+        shift = Duration::new(1, 0, 1);
+        tsr = ts1.shift(shift, 0);
+        assert!(tsr.is_err());
+
+        // Test duration with months: should error
+        shift = Duration::new(0, 5, 4);
+        tsr = ts1.shift(shift, 0);
+        assert!(tsr.is_err());
+
+        // Test with zero duration
+        shift = Duration::new(0, 0, 0);
+        ts2 = ts1.shift(shift, 0).unwrap();
+        assert_eq!(ts2, ts1);
+    }
+
+    #[test]
+    fn shift_quarters() {
+        // Create a timeline
+        let from = Date::from_calendar_date(2022, Month::January, 10).unwrap();
+        let to = Date::from_calendar_date(2024, Month::January, 10).unwrap();
+        let dr = DateRange::new(from, to);
+        let tl = Timeline::new(dr, Period::Quarter);
+
+        // Create a timeseries
+        let v1 = vec![1, 2, 3, 4, 5, 6, 7, 8];
+        let ts1 = TimeSeries::new(&tl, v1).unwrap();
+
+        // Create a shift duration and apply it
+        let mut shift = Duration::new(0, 9, 0);
+        let mut tsr = ts1.shift(shift, 0);
+        assert!(tsr.is_ok());
+        let mut ts2 = tsr.unwrap();
+        assert_eq!(ts2.values, vec![4, 5, 6, 7, 8, 0, 0, 0]);
+
+        // Test negative shift duration
+        shift = Duration::new(0, -9, 0);
+        ts2 = ts1.shift(shift, 0).unwrap();
+        assert_eq!(ts2.values, vec![0, 0, 0, 1, 2, 3, 4, 5]);
+
+        // Test different pad value
+        shift = Duration::new(0, -9, 0);
+        ts2 = ts1.shift(shift, 1000).unwrap();
+        assert_eq!(ts2.values, vec![1000, 1000, 1000, 1, 2, 3, 4, 5]);
+
+        // Test with shift greater than timeline
+        shift = Duration::new(0, 99, 0);
+        ts2 = ts1.shift(shift, 0).unwrap();
+        assert_eq!(ts2.values, vec![0; tl.len as usize]);
+        shift = Duration::new(0, -99, 0);
+        ts2 = ts1.shift(shift, 0).unwrap();
+        assert_eq!(ts2.values, vec![0; tl.len as usize]);
+
+        // Test years and months mixed
+        shift = Duration::new(0, -9, -1);
+        ts2 = ts1.shift(shift, 0).unwrap();
+        assert_eq!(ts2.values, vec![0, 0, 0, 0, 0, 0, 0, 1]);
+
+        // Test duration with days: should error
+        shift = Duration::new(1, 9, 0);
+        tsr = ts1.shift(shift, 0);
+        assert!(tsr.is_err());
+
+        // Test duration with bad months: should error
+        shift = Duration::new(0, 5, 0);
+        tsr = ts1.shift(shift, 0);
+        assert!(tsr.is_err());
+
+        // Test with zero duration
+        shift = Duration::new(0, 0, 0);
+        ts2 = ts1.shift(shift, 0).unwrap();
+        assert_eq!(ts2, ts1);
+    }
+
+    #[test]
+    fn shift_months() {
+        // Create a timeline
+        let from = Date::from_calendar_date(2022, Month::January, 10).unwrap();
+        let to = Date::from_calendar_date(2023, Month::August, 10).unwrap();
+        let dr = DateRange::new(from, to);
+        let tl = Timeline::new(dr, Period::Month);
+
+        // Create a timeseries
+        let v1 = vec![
+            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
+        ];
+        let ts1 = TimeSeries::new(&tl, v1).unwrap();
+
+        // Create a shift duration and apply it
+        let mut shift = Duration::new(0, 3, 0);
+        let mut tsr = ts1.shift(shift, 0);
+        assert!(tsr.is_ok());
+        let mut ts2 = tsr.unwrap();
+        assert_eq!(
+            ts2.values,
+            vec![4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 0, 0, 0]
+        );
+
+        // Test negative shift duration
+        shift = Duration::new(0, -3, 0);
+        ts2 = ts1.shift(shift, 0).unwrap();
+        assert_eq!(
+            ts2.values,
+            vec![0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+        );
+
+        // Test different pad value
+        shift = Duration::new(0, -3, 0);
+        ts2 = ts1.shift(shift, 1000).unwrap();
+        assert_eq!(
+            ts2.values,
+            vec![1000, 1000, 1000, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+        );
+
+        // Test with shift greater than timeline
+        shift = Duration::new(0, 100, 0);
+        ts2 = ts1.shift(shift, 0).unwrap();
+        assert_eq!(ts2.values, vec![0; tl.len as usize]);
+        shift = Duration::new(0, -100, 0);
+        ts2 = ts1.shift(shift, 0).unwrap();
+        assert_eq!(ts2.values, vec![0; tl.len as usize]);
+
+        // Test years and months mixed
+        shift = Duration::new(0, -5, -1);
+        ts2 = ts1.shift(shift, 0).unwrap();
+        assert_eq!(
+            ts2.values,
+            vec![0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2]
+        );
+
+        // Test duration with days: should error
+        shift = Duration::new(1, 9, 0);
+        tsr = ts1.shift(shift, 0);
+        assert!(tsr.is_err());
+
+        // Test with zero duration
+        shift = Duration::new(0, 0, 0);
+        ts2 = ts1.shift(shift, 0).unwrap();
+        assert_eq!(ts2, ts1);
+    }
+
+    #[test]
+    fn shift_weeks() {
+        // Create a timeline
+        let from = Date::from_calendar_date(2022, Month::January, 10).unwrap();
+        let to = Date::from_calendar_date(2022, Month::March, 7).unwrap();
+        let dr = DateRange::new(from, to);
+        let tl = Timeline::new(dr, Period::Week);
+
+        // Create a timeseries
+        let v1 = vec![1, 2, 3, 4, 5, 6, 7, 8];
+        let ts1 = TimeSeries::new(&tl, v1).unwrap();
+
+        // Create a shift duration and apply it
+        let mut shift = Duration::new(21, 0, 0);
+        let mut tsr = ts1.shift(shift, 0);
+        assert!(tsr.is_ok());
+        let mut ts2 = tsr.unwrap();
+        assert_eq!(ts2.values, vec![4, 5, 6, 7, 8, 0, 0, 0]);
+
+        // Test negative shift duration
+        shift = Duration::new(-21, 0, 0);
+        ts2 = ts1.shift(shift, 0).unwrap();
+        assert_eq!(ts2.values, vec![0, 0, 0, 1, 2, 3, 4, 5]);
+
+        // Test different pad value
+        shift = Duration::new(-21, 0, 0);
+        ts2 = ts1.shift(shift, 1000).unwrap();
+        assert_eq!(ts2.values, vec![1000, 1000, 1000, 1, 2, 3, 4, 5]);
+
+        // Test with shift greater than timeline
+        shift = Duration::new(98, 0, 0);
+        ts2 = ts1.shift(shift, 0).unwrap();
+        assert_eq!(ts2.values, vec![0; tl.len as usize]);
+        shift = Duration::new(-98, 0, 0);
+        ts2 = ts1.shift(shift, 0).unwrap();
+        assert_eq!(ts2.values, vec![0; tl.len as usize]);
+
+        // Test duration with months: should error
+        shift = Duration::new(14, 9, 0);
+        tsr = ts1.shift(shift, 0);
+        assert!(tsr.is_err());
+
+        // Test duration with years: should error
+        shift = Duration::new(14, 0, 8);
+        tsr = ts1.shift(shift, 0);
+        assert!(tsr.is_err());
+
+        // Test duration with bad days: should error
+        shift = Duration::new(20, 0, 0);
+        tsr = ts1.shift(shift, 0);
+        assert!(tsr.is_err());
+
+        // Test with zero duration
+        shift = Duration::new(0, 0, 0);
+        ts2 = ts1.shift(shift, 0).unwrap();
+        assert_eq!(ts2, ts1);
+    }
+
+    #[test]
+    fn shift_days() {
+        // Create a timeline
+        let from = Date::from_calendar_date(2022, Month::February, 25).unwrap();
+        let to = Date::from_calendar_date(2022, Month::March, 5).unwrap();
+        let dr = DateRange::new(from, to);
+        let tl = Timeline::new(dr, Period::Day);
+
+        // Create a timeseries
+        let v1 = vec![1, 2, 3, 4, 5, 6, 7, 8];
+        let ts1 = TimeSeries::new(&tl, v1).unwrap();
+
+        // Create a shift duration and apply it
+        let mut shift = Duration::new(4, 0, 0);
+        let mut tsr = ts1.shift(shift, 0);
+        assert!(tsr.is_ok());
+        let mut ts2 = tsr.unwrap();
+        assert_eq!(ts2.values, vec![5, 6, 7, 8, 0, 0, 0, 0]);
+
+        // Test negative shift duration
+        shift = Duration::new(-4, 0, 0);
+        ts2 = ts1.shift(shift, 0).unwrap();
+        assert_eq!(ts2.values, vec![0, 0, 0, 0, 1, 2, 3, 4]);
+
+        // Test different pad value
+        shift = Duration::new(-4, 0, 0);
+        ts2 = ts1.shift(shift, 1000).unwrap();
+        assert_eq!(ts2.values, vec![1000, 1000, 1000, 1000, 1, 2, 3, 4]);
+
+        // Test with shift greater than timeline
+        shift = Duration::new(100, 0, 0);
+        ts2 = ts1.shift(shift, 0).unwrap();
+        assert_eq!(ts2.values, vec![0; tl.len as usize]);
+        shift = Duration::new(-100, 0, 0);
+        ts2 = ts1.shift(shift, 0).unwrap();
+        assert_eq!(ts2.values, vec![0; tl.len as usize]);
+
+        // Test duration with years: should error
+        shift = Duration::new(10, 0, 1);
+        tsr = ts1.shift(shift, 0);
+        assert!(tsr.is_err());
+
+        // Test duration with months: should error
+        shift = Duration::new(21, 9, 0);
+        tsr = ts1.shift(shift, 0);
+        assert!(tsr.is_err());
+
+        // Test with zero duration
+        shift = Duration::new(0, 0, 0);
+        ts2 = ts1.shift(shift, 0).unwrap();
+        assert_eq!(ts2, ts1);
     }
 
     #[test]
