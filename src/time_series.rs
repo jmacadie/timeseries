@@ -1,13 +1,13 @@
 use crate::{timeline::Timeline, DateRange};
-use std::ops::{Add, AddAssign, Div, Mul, Rem, Sub};
+use std::ops::{Add, Div, Mul, Rem, Sub};
 use time::Date;
 
-pub enum AggType {
+/*pub enum AggType {
     Add,
     ArithmeticMean,
     GeometricMean,
     LinearInterpolation,
-}
+}*/
 
 /// # TimeSeries
 ///
