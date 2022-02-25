@@ -46,17 +46,17 @@ impl Timeline {
         Timeline::new(self.range, new)
     }
 
-    pub fn index_at(&self, date: Date) -> Option<i32> {
+    pub fn index_at(&self, date: Date) -> Option<usize> {
         if !self.range.contains(date) {
             return None;
         }
         let tmp_range = DateRange::new(self.range.from, date);
         match self.periodicity {
-            Period::Day => Some(tmp_range.as_days()),
-            Period::Week => Some(tmp_range.as_weeks(false)),
-            Period::Month => Some(tmp_range.as_months(false)),
-            Period::Quarter => Some(tmp_range.as_quarters(false)),
-            Period::Year => Some(tmp_range.as_years(false)),
+            Period::Day => Some(tmp_range.as_days() as usize),
+            Period::Week => Some(tmp_range.as_weeks(false) as usize),
+            Period::Month => Some(tmp_range.as_months(false) as usize),
+            Period::Quarter => Some(tmp_range.as_quarters(false) as usize),
+            Period::Year => Some(tmp_range.as_years(false) as usize),
         }
     }
 

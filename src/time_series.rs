@@ -224,6 +224,15 @@ where
     // endregion change_period
 
     // TODO: implement way to add values into an existing TS, maybe by providing a (Date, T) tuple
+    // region: update
+    pub fn update(&mut self, new_val: (Date, T)) {
+        if !self.timeline.range.contains(new_val.0) {
+            return;
+        }
+        let idx = self.timeline.index_at(new_val.0).unwrap();
+        self.values[idx] = new_val.1;
+    }
+    // endregion update
 
     // TODO: implement a way of building corkscrews with multiple operations
 }
@@ -712,6 +721,44 @@ mod tests {
         let ts1 = TimeSeries::new(&tl, v1).unwrap();
 
         assert_eq!(ts1.cast_i32().values, vec![1, 1, 0, 1]);
+    }
+
+    #[test]
+    fn update() {
+        // Create a timeline
+        let from = Date::from_calendar_date(2022, Month::January, 10).unwrap();
+        let to = Date::from_calendar_date(2023, Month::January, 10).unwrap();
+        let dr = DateRange::new(from, to);
+        let tl = Timeline::new(dr, Period::Quarter);
+
+        // Create a timeseries
+        let v1 = vec![1, 2, 3, 4];
+        let mut ts1 = TimeSeries::new(&tl, v1).unwrap();
+
+        // Before
+        let mut d = Date::from_calendar_date(2022, Month::January, 9).unwrap();
+        ts1.update((d, 1000));
+        assert_eq!(ts1.values, vec![1, 2, 3, 4]);
+
+        // First day
+        d = from;
+        ts1.update((d, 100));
+        assert_eq!(ts1.values, vec![100, 2, 3, 4]);
+
+        // Middle
+        d = Date::from_calendar_date(2022, Month::April, 10).unwrap();
+        ts1.update((d, -5));
+        assert_eq!(ts1.values, vec![100, -5, 3, 4]);
+
+        // Last day
+        d = dr.last_day();
+        ts1.update((d, 0));
+        assert_eq!(ts1.values, vec![100, -5, 3, 0]);
+
+        // After
+        d = to;
+        ts1.update((d, 200));
+        assert_eq!(ts1.values, vec![100, -5, 3, 0]);
     }
 
     #[test]
