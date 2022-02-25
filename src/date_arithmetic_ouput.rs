@@ -72,7 +72,7 @@ impl DateArithmeticOutput {
 impl fmt::Display for DateArithmeticOutput {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut output = String::new();
-        for d in self.values.clone().iter() {
+        for d in self.values.iter() {
             output.push_str(&format!("{}; ", d));
         }
         if output.chars().count() > 0 {
