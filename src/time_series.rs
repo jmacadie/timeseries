@@ -140,14 +140,46 @@ impl<'a, T> TimeSeries<'a, T> {
 
     // TODO: implement way to add values into an existing TS, maybe by providing a (Date, T) tuple
 
-    // TODO: be able to cast the values vector to other types, inside a new TS
-
     // TODO: implement a way of building corkscrews with multiple operations
 
     // TODO: implement a shift method so that operations can be done on time series objects that reference different time periods
     //  all combination methods currently offered are strictly limited to looking across isolated time periods
     //  need to think carefully about if this will expose any circularity issues
 }
+
+// region: cast_values
+impl<'a, T> TimeSeries<'a, T>
+where
+    T: Copy + Into<f64>,
+{
+    /// Change underlying data series into 64-bit float type. The source type has to
+    /// be capable of beinng converted e.e. won't work on String
+    pub fn cast_f64(&self) -> TimeSeries<'a, f64> {
+        let mut data = Vec::with_capacity(self.values.len());
+        for val in self.values.iter() {
+            let v1 = *val;
+            let v = v1.into();
+            data.push(v);
+        }
+        TimeSeries::new(self.timeline, data).unwrap()
+    }
+}
+
+impl<'a, T> TimeSeries<'a, T>
+where
+    T: Copy + Into<i32>,
+{
+    pub fn cast_i32(&self) -> TimeSeries<'a, i32> {
+        let mut data = Vec::with_capacity(self.values.len());
+        for val in self.values.iter() {
+            let v1 = *val;
+            let v = v1.into();
+            data.push(v);
+        }
+        TimeSeries::new(self.timeline, data).unwrap()
+    }
+}
+// endregion cast_values
 
 // region: empty_constuctors
 impl<'a> TimeSeries<'a, i32> {
@@ -569,6 +601,36 @@ mod tests {
         d2 = dr.last_day();
         dr1 = DateRange::new(d1, d2);
         assert!(ts.value_range(dr1).is_none());
+    }
+
+    #[test]
+    fn cast_f64() {
+        // Create a timeline
+        let from = Date::from_calendar_date(2022, Month::January, 10).unwrap();
+        let to = Date::from_calendar_date(2023, Month::January, 10).unwrap();
+        let dr = DateRange::new(from, to);
+        let tl = Timeline::new(dr, Period::Quarter);
+
+        // Create a timeseries
+        let v1 = vec![1, 2, 3, 4];
+        let ts1 = TimeSeries::new(&tl, v1).unwrap();
+
+        assert_eq!(ts1.cast_f64().values, vec![1.0, 2.0, 3.0, 4.0]);
+    }
+
+    #[test]
+    fn cast_i32() {
+        // Create a timeline
+        let from = Date::from_calendar_date(2022, Month::January, 10).unwrap();
+        let to = Date::from_calendar_date(2023, Month::January, 10).unwrap();
+        let dr = DateRange::new(from, to);
+        let tl = Timeline::new(dr, Period::Quarter);
+
+        // Create a timeseries
+        let v1 = vec![true, true, false, true];
+        let ts1 = TimeSeries::new(&tl, v1).unwrap();
+
+        assert_eq!(ts1.cast_i32().values, vec![1, 1, 0, 1]);
     }
 
     #[test]
