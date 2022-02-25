@@ -128,12 +128,6 @@ impl DateRange {
         }
     }
 
-    /// Tests if the source date range contains the whole of the
-    /// second date range
-    pub fn fully_contains(&self, other: &DateRange) -> bool {
-        self.from <= other.from && self.to >= other.to
-    }
-
     // TODO: consider whether this should be an Option, with None being
     // returned where the two DateRanges are disjoint
     /// Returns the union of the two input `DateRange`. Since
@@ -150,6 +144,13 @@ impl DateRange {
     pub fn contains(&self, date: Date) -> bool {
         self.from <= date && self.to > date
     }
+
+    /// Tests if the source date range contains the whole of the
+    /// second date range
+    pub fn fully_contains(&self, other: &DateRange) -> bool {
+        self.from <= other.from && self.to >= other.to
+    }
+
     // endregion utility
 }
 
@@ -511,5 +512,36 @@ mod tests {
         // Date after
         d3 = Date::from_calendar_date(2027, Month::January, 15).unwrap();
         assert!(!dr.contains(d3));
+    }
+
+    #[test]
+    fn fully_contains() {
+        let d1 = Date::from_calendar_date(2022, Month::January, 15).unwrap();
+        let d2 = Date::from_calendar_date(2023, Month::January, 15).unwrap();
+        let dr = DateRange::new(d1, d2);
+
+        // Same Date Range
+        let mut d3 = Date::from_calendar_date(2022, Month::January, 15).unwrap();
+        let mut d4 = Date::from_calendar_date(2023, Month::January, 15).unwrap();
+        let mut dr2 = DateRange::new(d3, d4);
+        assert!(dr.fully_contains(&dr2));
+
+        // Date Range within
+        d3 = Date::from_calendar_date(2022, Month::February, 1).unwrap();
+        d4 = Date::from_calendar_date(2022, Month::December, 31).unwrap();
+        dr2 = DateRange::new(d3, d4);
+        assert!(dr.fully_contains(&dr2));
+
+        // Date Range earlier
+        d3 = Date::from_calendar_date(2022, Month::January, 14).unwrap();
+        d4 = Date::from_calendar_date(2022, Month::December, 31).unwrap();
+        dr2 = DateRange::new(d3, d4);
+        assert!(!dr.fully_contains(&dr2));
+
+        // Date Range later
+        d3 = Date::from_calendar_date(2022, Month::February, 1).unwrap();
+        d4 = Date::from_calendar_date(2023, Month::January, 16).unwrap();
+        dr2 = DateRange::new(d3, d4);
+        assert!(!dr.fully_contains(&dr2));
     }
 }
