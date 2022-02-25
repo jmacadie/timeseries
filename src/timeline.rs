@@ -19,10 +19,10 @@ use time::{util::days_in_year_month, Date, Month};
 /// three periods will be whole months and the final one will be 2 days
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Timeline {
-    pub(crate) range: DateRange,
-    periodicity: Period,
+    pub range: DateRange,
+    pub periodicity: Period,
     current_date: Date,
-    pub(crate) len: i32,
+    pub len: i32,
 }
 
 impl Timeline {
