@@ -1,7 +1,7 @@
 use std::cmp;
 use time::Date;
 
-use crate::duration::Duration;
+use crate::{Duration, TimeSeriesError};
 
 /// # DateRange
 ///
@@ -35,9 +35,9 @@ impl DateRange {
 
     /// Creates a new `DateRange` object from a `Date` and a
     /// `Duration`
-    pub fn from_duration(from: Date, dur: Duration) -> Self {
-        let to = from + dur;
-        Self::new(from, to.primary())
+    pub fn from_duration(from: Date, dur: Duration) -> Result<Self, TimeSeriesError> {
+        let to = (from + dur)?;
+        Ok(Self::new(from, to.primary()))
     }
     // endregion constructors
 
@@ -53,7 +53,7 @@ impl DateRange {
     /// Retun last valid day inside the `DateRange`, as by
     /// definition `to` is just outside the `DateRange`
     pub fn last_day(&self) -> Date {
-        self.to.previous_day().unwrap()
+        self.to.previous_day().unwrap_or(self.to)
     }
     // endregion getters
 
@@ -196,7 +196,7 @@ mod tests {
         // Try 1 day
         let d = Date::from_calendar_date(2022, Month::January, 15).unwrap();
         let mut dur = Duration::new(1, 0, 0);
-        let mut dr = DateRange::from_duration(d, dur);
+        let mut dr = DateRange::from_duration(d, dur).unwrap();
         assert_eq!(
             (dr.from().day(), dr.from().month(), dr.from().year()),
             (15, Month::January, 2022)
@@ -208,7 +208,7 @@ mod tests {
 
         // Try 100 days
         dur = Duration::new(100, 0, 0);
-        dr = DateRange::from_duration(d, dur);
+        dr = DateRange::from_duration(d, dur).unwrap();
         assert_eq!(
             (dr.from().day(), dr.from().month(), dr.from().year()),
             (15, Month::January, 2022)
@@ -220,7 +220,7 @@ mod tests {
 
         // Try 1 month
         dur = Duration::new(0, 1, 0);
-        dr = DateRange::from_duration(d, dur);
+        dr = DateRange::from_duration(d, dur).unwrap();
         assert_eq!(
             (dr.from().day(), dr.from().month(), dr.from().year()),
             (15, Month::January, 2022)
@@ -232,7 +232,7 @@ mod tests {
 
         // Try 15 months
         dur = Duration::new(0, 15, 0);
-        dr = DateRange::from_duration(d, dur);
+        dr = DateRange::from_duration(d, dur).unwrap();
         assert_eq!(
             (dr.from().day(), dr.from().month(), dr.from().year()),
             (15, Month::January, 2022)
@@ -244,7 +244,7 @@ mod tests {
 
         // Try 1 year
         dur = Duration::new(0, 0, 1);
-        dr = DateRange::from_duration(d, dur);
+        dr = DateRange::from_duration(d, dur).unwrap();
         assert_eq!(
             (dr.from().day(), dr.from().month(), dr.from().year()),
             (15, Month::January, 2022)

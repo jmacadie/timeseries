@@ -1,4 +1,4 @@
-use crate::{duration::Duration, DateRange, Period};
+use crate::{error::TimeSeriesError, DateRange, Duration, Period};
 use std::cmp;
 use time::{util::days_in_year_month, Date, Month};
 
@@ -22,17 +22,17 @@ pub struct Timeline {
     pub range: DateRange,
     pub periodicity: Period,
     current_date: Date,
-    pub len: i32,
+    pub len: usize,
 }
 
 impl Timeline {
     pub fn new(range: DateRange, periodicity: Period) -> Self {
         let len = match periodicity {
-            Period::Day => range.as_days(),
-            Period::Week => range.as_weeks(true),
-            Period::Month => range.as_months(true),
-            Period::Quarter => range.as_quarters(true),
-            Period::Year => range.as_years(true),
+            Period::Day => range.as_days() as usize,
+            Period::Week => range.as_weeks(true) as usize,
+            Period::Month => range.as_months(true) as usize,
+            Period::Quarter => range.as_quarters(true) as usize,
+            Period::Year => range.as_years(true) as usize,
         };
         Timeline {
             range,
@@ -61,11 +61,12 @@ impl Timeline {
     }
 
     pub fn index(&self, mut idx: i32) -> Option<DateRange> {
-        if idx >= self.len || idx < -self.len {
+        let len = i32::try_from(self.len).ok()?;
+        if idx >= len || idx < -len {
             return None;
         }
         if idx < 0 {
-            idx += self.len;
+            idx += len;
         }
         let dur1: Duration;
         let dur2: Duration;
@@ -91,8 +92,9 @@ impl Timeline {
                 dur2 = Duration::new(0, 0, 1);
             }
         };
-        let start = (self.range.from + dur1).primary();
-        let end = cmp::min((start + dur2).primary(), self.range.to);
+        let start = (self.range.from + dur1).ok()?.primary();
+        let mut end = (start + dur2).ok()?.primary();
+        end = cmp::min(end, self.range.to);
         Some(DateRange::new(start, end))
     }
 
@@ -100,12 +102,12 @@ impl Timeline {
     //  * a getter for a time slice (maybe? need to think of the use case)
 
     // TODO: even needed?
-    pub fn merge(&self, other: Timeline) -> Result<Timeline, &'static str> {
+    pub fn merge(&self, other: Timeline) -> Result<Timeline, TimeSeriesError> {
         if *self == other {
             return Ok(*self);
         }
         if self.periodicity != other.periodicity {
-            return Err("Time periods do match");
+            return Err(TimeSeriesError::PeriodicityDoesNotMatch);
         }
         Ok(Timeline::new(
             self.range.union(&other.range),
@@ -440,8 +442,6 @@ mod tests {
         }
         assert_eq!(counter, 3, "Iterated right number of years");
     }
-
-    // TODO: write some proper tests!
 
     #[test]
     fn from_test() {

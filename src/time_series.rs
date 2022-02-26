@@ -1,4 +1,4 @@
-use crate::{duration::Duration, timeline::Timeline, DateRange, Period};
+use crate::{DateRange, Duration, Period, TimeSeriesError, Timeline};
 use std::cmp;
 use std::ops::{Add, Div, Mul, Rem, Sub};
 use time::Date;
@@ -8,7 +8,7 @@ use time::Date;
     ArithmeticMean,
     GeometricMean,
     LinearInterpolation,
-}*/
+} */
 
 /// # TimeSeries
 ///
@@ -55,16 +55,9 @@ where
     ///
     /// This method will throw an error if the length of the timeline provided and the
     /// length of the value vector do not match
-    pub fn new(timeline: &'a Timeline, values: Vec<T>) -> Result<Self, &'static str> {
-        match i32::try_from(values.len()) {
-            Ok(l) => {
-                if l != timeline.len {
-                    return Err("Values do not match the timeline");
-                }
-            }
-            Err(_) => {
-                return Err("Couldn't convert length of values into i32");
-            }
+    pub fn new(timeline: &'a Timeline, values: Vec<T>) -> Result<Self, TimeSeriesError> {
+        if values.len() != timeline.len {
+            return Err(TimeSeriesError::TimelineDoesNotMatchValues);
         }
         Ok(TimeSeries { timeline, values })
     }
@@ -79,12 +72,12 @@ where
     /// shifted off the end of the timeline, and will get discarded. On the
     /// other side, new values will be brought into scope, which is what the
     /// pad value is required for
-    pub fn shift(&self, shift: Duration, pad: T) -> Result<Self, &'static str> {
+    pub fn shift(&self, shift: Duration, pad: T) -> Result<Self, TimeSeriesError> {
         let shift_len: usize;
         match self.timeline.periodicity {
             Period::Year => {
                 if shift.days() > 0 || shift.months() > 0 {
-                    return Err("Shift provided isn't a whole number of years");
+                    return Err(TimeSeriesError::BadShift(Period::Year));
                 }
                 shift_len = match shift.years() {
                     l if l < 0 => cmp::min(-l as usize, self.values.len()),
@@ -94,7 +87,7 @@ where
             }
             Period::Quarter => {
                 if shift.days() > 0 || shift.months() % 3 > 0 {
-                    return Err("Shift provided isn't a whole number of quarters");
+                    return Err(TimeSeriesError::BadShift(Period::Year));
                 }
                 shift_len = match shift.years() * 4 + shift.months() / 3 {
                     l if l < 0 => cmp::min(-l as usize, self.values.len()),
@@ -104,7 +97,7 @@ where
             }
             Period::Month => {
                 if shift.days() > 0 {
-                    return Err("Shift provided isn't a whole number of months");
+                    return Err(TimeSeriesError::BadShift(Period::Year));
                 }
                 shift_len = match shift.years() * 12 + shift.months() {
                     l if l < 0 => cmp::min(-l as usize, self.values.len()),
@@ -114,7 +107,7 @@ where
             }
             Period::Week => {
                 if shift.years() > 0 || shift.months() > 0 || shift.days() % 7 > 0 {
-                    return Err("Shift provided can only be multiples of 7 days");
+                    return Err(TimeSeriesError::BadShift(Period::Year));
                 }
                 shift_len = match shift.days() / 7 {
                     l if l < 0 => cmp::min(-l as usize, self.values.len()),
@@ -124,7 +117,7 @@ where
             }
             Period::Day => {
                 if shift.years() > 0 || shift.months() > 0 {
-                    return Err("Shift provided can only contain days");
+                    return Err(TimeSeriesError::BadShift(Period::Year));
                 }
                 shift_len = match shift.days() {
                     l if l < 0 => cmp::min(-l as usize, self.values.len()),
@@ -150,7 +143,8 @@ where
                 data.push(self.values[i].clone());
             }
         }
-        Ok(Self::new(self.timeline, data).unwrap())
+        let ts = Self::new(self.timeline, data)?;
+        Ok(ts)
     }
 
     // endregion constructors
@@ -174,61 +168,102 @@ where
     // endregion getters
 
     // region: change_period
-    /*pub fn change_periodicity(
+
+    // TODO: implement a way of building corkscrews with multiple operations
+}
+
+// region: change_periodicity
+/*impl<'a, T> TimeSeries<'a, T>
+where
+    T: AddAssign + Add<Output = T> + Sub<Output = T> + Mul<i32> + Div<i32> + Copy,
+{
+    pub fn change_periodicity(
         &self,
         timeline: &'a Timeline,
         transform: AggType,
-    ) -> Result<TimeSeries<'a, T>, &'static str> {
-        if timeline.range.from() != self.timeline.range.from()
-            || timeline.range.to() != self.timeline.range.to()
-        {
-            return Err("Cannot transform timeline as start and end dates do not match");
+    ) -> Result<TimeSeries<'a, T>, TimeSeriesError> {
+        if timeline.range != self.timeline.range {
+            return Err(TimeSeriesError::TimelinesDoNotMatch);
         }
-        if timeline = self.timeline {
+        if timeline == self.timeline {
             return Ok(self.clone());
         }
         match transform {
             AggType::Add => {
                 if timeline.periodicity > self.timeline.periodicity {
-                    for (i, val) in self.values.iter().enumerate() {
-                        if self.timeline.index(date)
-                    }
+                    Ok(self.add_up(timeline))
+                } else {
+                    //Ok(self.add_down(timeline))
+                    Err("This type of aggregation is not yet implemented")
                 }
-            },
-            _ => {}
+            }
+            _ => Err("This type of aggregation is not yet implemented"),
         }
-    }*/
+    }
 
-    /*fn add_up(&self, target_timeline: &'a Timeline) -> Self
-    where
-        T: AddAssign + Add<Output = T> + Copy,
-    {
-        // Loop through every per
+    fn add_up(&self, target_timeline: &'a Timeline) -> Self {
+        let mut source_range: DateRange;
+        let mut target_iter = target_timeline.clone();
+        // TODO: remove unwrap
+        let mut target_range = target_iter.next().unwrap();
+        let mut data: Vec<T> = Vec::with_capacity(target_timeline.len as usize);
+        let mut val: T;
+        let mut res: T;
+        let mut start_period = true;
+
+        //  loop through every source period
         for i in 0..self.timeline.len {
-            let target_range = self.timeline.index(i).unwrap();
-        }
-        let target_range = timeline.next().unwrap();
-        let mut out: T;
-        let mut data: Vec<T> = Vec::with_capacity(timeline.len as usize);
-        for (val, range) in self.values.iter().zip(self.timeline.clone().into_iter()) {
-            if target_range.fully_contains(&range) {
-                out += *val;
-            } else {
-                if let Some(dr) = target_range.intersect(&range) {
-                    // TODO: figure out how to apportion for part periods
-                    //out += *val * dr.as_days() / range.as_days();
-                    //nxt = *val - *val * dr.as_days() / range.as_days();
+            // TODO: remove unwrap
+            source_range = self.timeline.index(i as i32).unwrap();
+            if target_range.fully_contains(&source_range) {
+                if start_period {
+                    start_period = false;
+                    val = self.values[i];
+                } else {
+                    val += self.values[i];
                 }
-                data.push(out);
-                let Some(target_range) = timeline.next();
+                if target_range.last_day() == source_range.last_day() {
+                    // Append the data
+                    data.push(val);
+
+                    // Set vals to start the next target period
+                    start_period = true;
+                    // TODO: remove unwrap
+                    target_range = target_iter.next().unwrap();
+                }
+            } else {
+                // Target does not fully contain the source so only part of the
+                // source period applies to the current target with the balance
+                // applying to the next
+
+                // Work out the proportion of the source period that applies to the target period
+                // TODO: remove unwrap
+                res = self.values[i] * target_range.intersect(&source_range).unwrap().as_days()
+                    / source_range.as_days();
+                val += res;
+
+                // TODO: don't think we should ever be at a start period but leaving it in commented out
+                // to provoke future thought
+                /*if start_period {
+                    val = res;
+                } else {
+                    val += res;
+                }*/
+
+                // Append the data
+                data.push(val);
+
+                // Set vals to start the next target period
+                start_period = false; // false becasue we already have a part period
+                val = self.values[i] - res;
+                // TODO: remove unwrap
+                target_range = target_iter.next().unwrap();
             }
         }
-        TimeSeries::new(timeline, data).unwrap()
-    }*/
-    // endregion change_period
-
-    // TODO: implement a way of building corkscrews with multiple operations
-}
+        TimeSeries::new(target_timeline, data).unwrap()
+    }
+}*/
+// endregion change_periodicity
 
 // region: update
 impl<'a, T> TimeSeries<'a, T> {
@@ -236,11 +271,9 @@ impl<'a, T> TimeSeries<'a, T> {
     /// date with the supplied value. Use `.update_add()` if you want to add the
     /// new value to the current value at the date
     pub fn update(&mut self, new_val: (Date, T)) {
-        if !self.timeline.range.contains(new_val.0) {
-            return;
-        }
-        let idx = self.timeline.index_at(new_val.0).unwrap();
-        self.values[idx] = new_val.1;
+        if let Some(idx) = self.timeline.index_at(new_val.0) {
+            self.values[idx] = new_val.1;
+        };
     }
 }
 
@@ -251,11 +284,9 @@ where
     /// Update the `TimeSeries` in place. Will add the supplied value to
     /// the value already at the date
     pub fn update_add(&mut self, new_val: (Date, T)) {
-        if !self.timeline.range.contains(new_val.0) {
-            return;
-        }
-        let idx = self.timeline.index_at(new_val.0).unwrap();
-        self.values[idx] = self.values[idx] + new_val.1;
+        if let Some(idx) = self.timeline.index_at(new_val.0) {
+            self.values[idx] = self.values[idx] + new_val.1;
+        };
     }
 }
 // endregion update
@@ -274,6 +305,8 @@ where
             let v = v1.into();
             data.push(v);
         }
+        // Think I have to have an unwrap here as can't see how this
+        // can ever error out
         TimeSeries::new(self.timeline, data).unwrap()
     }
 }
@@ -289,6 +322,8 @@ where
             let v = v1.into();
             data.push(v);
         }
+        // Think I have to have an unwrap here as can't see how this
+        // can ever error out
         TimeSeries::new(self.timeline, data).unwrap()
     }
 }
@@ -358,13 +393,17 @@ impl<'a, T> TimeSeries<'a, T> {
     /// };
     /// let ts3 = ts1.apply(&ts2, op).unwrap();
     /// ```
-    pub fn apply<F>(&self, other: &TimeSeries<'a, T>, func: F) -> Result<TimeSeries<'a, T>, &str>
+    pub fn apply<F>(
+        &self,
+        other: &TimeSeries<'a, T>,
+        func: F,
+    ) -> Result<TimeSeries<'a, T>, TimeSeriesError>
     where
         F: FnMut((&T, &T)) -> T,
         T: Copy,
     {
         if self.timeline != other.timeline {
-            return Err("Timelines do not match. Ensure a common timeline is being used");
+            return Err(TimeSeriesError::TimelinesDoNotMatch);
         }
         let data = self
             .values
@@ -372,8 +411,8 @@ impl<'a, T> TimeSeries<'a, T> {
             .zip(other.values.iter())
             .map(func)
             .collect();
-        // Went with unwrap here as a TimeSeries created in these conditions should always be OK
-        Ok(TimeSeries::new(self.timeline, data).unwrap())
+        let ts = TimeSeries::new(self.timeline, data)?;
+        Ok(ts)
     }
 }
 // endregion generic_func
@@ -387,11 +426,11 @@ impl<'a, 'b, 'c, T> Add<&'c TimeSeries<'a, T>> for &'b TimeSeries<'a, T>
 where
     T: Add + Add<Output = T> + Copy,
 {
-    type Output = Result<TimeSeries<'a, T>, &'static str>;
+    type Output = Result<TimeSeries<'a, T>, TimeSeriesError>;
 
-    fn add(self, rhs: &'c TimeSeries<'a, T>) -> Result<TimeSeries<'a, T>, &'static str> {
+    fn add(self, rhs: &'c TimeSeries<'a, T>) -> Result<TimeSeries<'a, T>, TimeSeriesError> {
         if self.timeline != rhs.timeline {
-            return Err("Timelines do not match. Ensure a common timeline is being used");
+            return Err(TimeSeriesError::TimelinesDoNotMatch);
         }
         let data = self
             .values
@@ -399,8 +438,8 @@ where
             .zip(rhs.values.iter())
             .map(|(&a, &b)| a + b)
             .collect();
-        // Went with unwrap here as a TimeSeries created in these conditions should always be OK
-        Ok(TimeSeries::new(self.timeline, data).unwrap())
+        let ts = TimeSeries::new(self.timeline, data)?;
+        Ok(ts)
     }
 }
 
@@ -425,11 +464,11 @@ impl<'a, 'b, 'c, T> Sub<&'c TimeSeries<'a, T>> for &'b TimeSeries<'a, T>
 where
     T: Sub + Sub<Output = T> + Copy,
 {
-    type Output = Result<TimeSeries<'a, T>, &'static str>;
+    type Output = Result<TimeSeries<'a, T>, TimeSeriesError>;
 
-    fn sub(self, rhs: &'c TimeSeries<'a, T>) -> Result<TimeSeries<'a, T>, &'static str> {
+    fn sub(self, rhs: &'c TimeSeries<'a, T>) -> Result<TimeSeries<'a, T>, TimeSeriesError> {
         if self.timeline != rhs.timeline {
-            return Err("Timelines do not match. Ensure a common timeline is being used");
+            return Err(TimeSeriesError::TimelinesDoNotMatch);
         }
         let data = self
             .values
@@ -437,8 +476,8 @@ where
             .zip(rhs.values.iter())
             .map(|(&a, &b)| a - b)
             .collect();
-        // Went with unwrap here as a TimeSeries created in these conditions should always be OK
-        Ok(TimeSeries::new(self.timeline, data).unwrap())
+        let ts = TimeSeries::new(self.timeline, data)?;
+        Ok(ts)
     }
 }
 
@@ -463,11 +502,11 @@ impl<'a, 'b, 'c, T> Mul<&'c TimeSeries<'a, T>> for &'b TimeSeries<'a, T>
 where
     T: Mul + Mul<Output = T> + Copy,
 {
-    type Output = Result<TimeSeries<'a, T>, &'static str>;
+    type Output = Result<TimeSeries<'a, T>, TimeSeriesError>;
 
-    fn mul(self, rhs: &'c TimeSeries<'a, T>) -> Result<TimeSeries<'a, T>, &'static str> {
+    fn mul(self, rhs: &'c TimeSeries<'a, T>) -> Result<TimeSeries<'a, T>, TimeSeriesError> {
         if self.timeline != rhs.timeline {
-            return Err("Timelines do not match. Ensure a common timeline is being used");
+            return Err(TimeSeriesError::TimelinesDoNotMatch);
         }
         let data = self
             .values
@@ -475,8 +514,8 @@ where
             .zip(rhs.values.iter())
             .map(|(&a, &b)| a * b)
             .collect();
-        // Went with unwrap here as a TimeSeries created in these conditions should always be OK
-        Ok(TimeSeries::new(self.timeline, data).unwrap())
+        let ts = TimeSeries::new(self.timeline, data)?;
+        Ok(ts)
     }
 }
 
@@ -501,11 +540,11 @@ impl<'a, 'b, 'c, T> Div<&'c TimeSeries<'a, T>> for &'b TimeSeries<'a, T>
 where
     T: Div + Div<Output = T> + Copy,
 {
-    type Output = Result<TimeSeries<'a, T>, &'static str>;
+    type Output = Result<TimeSeries<'a, T>, TimeSeriesError>;
 
-    fn div(self, rhs: &'c TimeSeries<'a, T>) -> Result<TimeSeries<'a, T>, &'static str> {
+    fn div(self, rhs: &'c TimeSeries<'a, T>) -> Result<TimeSeries<'a, T>, TimeSeriesError> {
         if self.timeline != rhs.timeline {
-            return Err("Timelines do not match. Ensure a common timeline is being used");
+            return Err(TimeSeriesError::TimelinesDoNotMatch);
         }
         let data = self
             .values
@@ -513,8 +552,8 @@ where
             .zip(rhs.values.iter())
             .map(|(&a, &b)| a / b)
             .collect();
-        // Went with unwrap here as a TimeSeries created in these conditions should always be OK
-        Ok(TimeSeries::new(self.timeline, data).unwrap())
+        let ts = TimeSeries::new(self.timeline, data)?;
+        Ok(ts)
     }
 }
 
@@ -539,11 +578,11 @@ impl<'a, 'b, 'c, T> Rem<&'c TimeSeries<'a, T>> for &'b TimeSeries<'a, T>
 where
     T: Rem + Rem<Output = T> + Copy,
 {
-    type Output = Result<TimeSeries<'a, T>, &'static str>;
+    type Output = Result<TimeSeries<'a, T>, TimeSeriesError>;
 
-    fn rem(self, rhs: &'c TimeSeries<'a, T>) -> Result<TimeSeries<'a, T>, &'static str> {
+    fn rem(self, rhs: &'c TimeSeries<'a, T>) -> Result<TimeSeries<'a, T>, TimeSeriesError> {
         if self.timeline != rhs.timeline {
-            return Err("Timelines do not match. Ensure a common timeline is being used");
+            return Err(TimeSeriesError::TimelinesDoNotMatch);
         }
         let data = self
             .values
@@ -551,8 +590,8 @@ where
             .zip(rhs.values.iter())
             .map(|(&a, &b)| a % b)
             .collect();
-        // Went with unwrap here as a TimeSeries created in these conditions should always be OK
-        Ok(TimeSeries::new(self.timeline, data).unwrap())
+        let ts = TimeSeries::new(self.timeline, data)?;
+        Ok(ts)
     }
 }
 
@@ -614,20 +653,8 @@ mod tests {
         let ts3 = TimeSeries::new(&tl, v3);
         assert!(ts3.is_err());
         if let Err(e) = ts3 {
-            assert_eq!(e, "Values do not match the timeline")
+            assert_eq!(e, TimeSeriesError::TimelineDoesNotMatchValues);
         }
-
-        // Create a timeseries that's longer than i32 (eek!) and check it errors out
-        let len: usize = 2_147_483_648;
-        let v4 = vec![0; len];
-
-        let ts4 = TimeSeries::new(&tl, v4);
-        assert!(ts4.is_err());
-        if let Err(e) = ts4 {
-            assert_eq!(e, "Couldn't convert length of values into i32")
-        }
-
-        // Create a timeseries that's just shorter than i32 and check it's ok
     }
 
     #[test]

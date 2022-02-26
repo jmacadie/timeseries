@@ -1,4 +1,4 @@
-use crate::DateArithmeticOutput;
+use crate::{DateArithmeticOutput, TimeSeriesError};
 use core::fmt;
 use std::cmp;
 use std::ops::{Add, Sub};
@@ -142,10 +142,10 @@ impl Duration {
     }
 
     /// Create a new `Duration` from a [`time::Duration`] object
-    pub fn from_time_duration(dur: time::Duration) -> Self {
+    pub fn from_time_duration(dur: time::Duration) -> Result<Self, TimeSeriesError> {
         let days = dur.whole_days();
-        let days = i32::try_from(days).unwrap();
-        Self::new(days, 0, 0)
+        let days = i32::try_from(days).map_err(|_| TimeSeriesError::TimeDurationTooLarge)?;
+        Ok(Self::new(days, 0, 0))
     }
 
     /// Internal method for calculating a `Duration` from a pair
@@ -243,9 +243,9 @@ impl Duration {
     /// call into a normalise days, months and years duration.
     /// By normalised it is meant that days are in the range 0..32 &
     /// months are in the range  0..13
-    pub fn normalise(&self, date: Date) -> Self {
-        let to = (date + self).primary();
-        Self::from_dates(date, to)
+    pub fn normalise(&self, date: Date) -> Result<Self, TimeSeriesError> {
+        let to = (date + self)?.primary();
+        Ok(Self::from_dates(date, to))
     }
 
     /// Inverts a duration by changing the sign on every part of the duration
@@ -284,7 +284,7 @@ impl Duration {
     /// Called by the trait implementations which consider the
     /// various combinations of adding and subtracting Dates and
     /// Durations
-    fn add_int(dur: Duration, date: Date) -> DateArithmeticOutput {
+    fn add_int(dur: Duration, date: Date) -> Result<DateArithmeticOutput, TimeSeriesError> {
         // Add days first for negative durations & last for positive
         let days_first: bool;
         if dur.forwards() {
@@ -293,10 +293,10 @@ impl Duration {
             days_first = true;
         }
 
-        let mut output = dur.add_once(date, days_first, true);
+        let mut output = dur.add_once(date, days_first, true)?;
 
         // Add the other days that could result from the addition / subtraction
-        if dur.is_multiple_output(date) {
+        if dur.is_multiple_output(date)? {
             // Deal with days that could have multiplied because both routes give rise to
             // an invalid date, so the invalid date is truncated to month end
             // Only ever happens at end of month
@@ -307,21 +307,23 @@ impl Duration {
                 for i in day..lim {
                     // N.B. might never loop here & that's OK
                     let temp = i as u8;
-                    output.append(Date::from_calendar_date(year, month, temp).unwrap());
+                    if let Ok(d) = Date::from_calendar_date(year, month, temp) {
+                        output.append(d);
+                    }
                 }
             }
 
             // Check for date by adding with the days order reversed
-            let d = dur.add_once(date, !days_first, false).primary();
+            let d = dur.add_once(date, !days_first, false)?.primary();
             if !output.contains(d) {
                 output.append(d);
             }
         }
-        output
+        Ok(output)
     }
 
     /// Determine if the date plus duration will give rise to multiple outputs
-    fn is_multiple_output(&self, date: Date) -> bool {
+    fn is_multiple_output(&self, date: Date) -> Result<bool, TimeSeriesError> {
         let temp: Date;
         let day_lim: i32;
 
@@ -329,7 +331,7 @@ impl Duration {
             temp = date;
             day_lim = self.days;
         } else {
-            temp = self.add_days(date);
+            temp = self.add_days(date)?;
             day_lim = 1 - self.days;
         }
 
@@ -337,7 +339,7 @@ impl Duration {
         let to = days_in_year_month(year, month) as i32;
         let from = days_in_year_month(temp.year(), temp.month()) as i32;
 
-        temp.day() as i32 > from - cmp::min(cmp::max(to - from, 0), cmp::max(day_lim, 1))
+        Ok(temp.day() as i32 > from - cmp::min(cmp::max(to - from, 0), cmp::max(day_lim, 1)))
     }
 
     /// Is the date at the end of the month?
@@ -362,7 +364,12 @@ impl Duration {
             year -= 1;
         }
         month += 1;
-        let month = Month::try_from(month as u8).unwrap();
+        // I'm pretty confident we'll never get an error
+        // on the try_from. Used unwrap_or with a default
+        // value, so that we remove the chance for panicing
+        // code, although this does introduce the risk that
+        // I'm wrong and we have a silent error!
+        let month = Month::try_from(month as u8).unwrap_or(Month::January);
 
         (year, month)
     }
@@ -372,11 +379,16 @@ impl Duration {
     ///
     /// If the other way round also fails, will truncate
     /// the failing intermediate date to end of month
-    fn add_once(&self, date: Date, days_first: bool, first_pass: bool) -> DateArithmeticOutput {
+    fn add_once(
+        &self,
+        date: Date,
+        days_first: bool,
+        first_pass: bool,
+    ) -> Result<DateArithmeticOutput, TimeSeriesError> {
         // Assign the internal date variable & add days, if that's what we're doing
         let mut temp: Date;
         if days_first {
-            temp = self.add_days(date);
+            temp = self.add_days(date)?;
         } else {
             temp = date;
         }
@@ -391,8 +403,8 @@ impl Duration {
                 if !first_pass {
                     // If all else fails then take the day at the end of the month being tried
                     let d = Date::from_calendar_date(year, month, days_in_year_month(year, month))
-                        .unwrap();
-                    return DateArithmeticOutput::new(d);
+                        .map_err(|_| TimeSeriesError::DateOutOfRange)?;
+                    return Ok(DateArithmeticOutput::new(d));
                 }
                 return self.add_once(date, !days_first, false);
             }
@@ -400,15 +412,16 @@ impl Duration {
 
         // Add days as required
         if !days_first {
-            temp = self.add_days(temp);
+            temp = self.add_days(temp)?;
         }
-        DateArithmeticOutput::new(temp)
+        Ok(DateArithmeticOutput::new(temp))
     }
 
     /// Internal method to add any number of days to a date
-    fn add_days(&self, date: Date) -> Date {
+    fn add_days(&self, date: Date) -> Result<Date, TimeSeriesError> {
         let julian = date.to_julian_day() + self.days;
-        Date::from_julian_day(julian).unwrap()
+        let d = Date::from_julian_day(julian).map_err(|_| TimeSeriesError::DateOutOfRange)?;
+        Ok(d)
     }
     // endregion addition
 }
@@ -426,33 +439,33 @@ impl Add for Duration {
 }
 
 impl Add<Date> for Duration {
-    type Output = DateArithmeticOutput;
+    type Output = Result<DateArithmeticOutput, TimeSeriesError>;
 
-    fn add(self, rhs: Date) -> DateArithmeticOutput {
+    fn add(self, rhs: Date) -> Result<DateArithmeticOutput, TimeSeriesError> {
         Self::add_int(self, rhs)
     }
 }
 
 impl Add<Duration> for Date {
-    type Output = DateArithmeticOutput;
+    type Output = Result<DateArithmeticOutput, TimeSeriesError>;
 
-    fn add(self, rhs: Duration) -> DateArithmeticOutput {
+    fn add(self, rhs: Duration) -> Result<DateArithmeticOutput, TimeSeriesError> {
         Duration::add_int(rhs, self)
     }
 }
 
 impl Add<&Duration> for Date {
-    type Output = DateArithmeticOutput;
+    type Output = Result<DateArithmeticOutput, TimeSeriesError>;
 
-    fn add(self, rhs: &Duration) -> DateArithmeticOutput {
+    fn add(self, rhs: &Duration) -> Result<DateArithmeticOutput, TimeSeriesError> {
         Duration::add_int(*rhs, self)
     }
 }
 
 impl Add<Duration> for DateArithmeticOutput {
-    type Output = DateArithmeticOutput;
+    type Output = Result<DateArithmeticOutput, TimeSeriesError>;
 
-    fn add(self, rhs: Duration) -> DateArithmeticOutput {
+    fn add(self, rhs: Duration) -> Result<DateArithmeticOutput, TimeSeriesError> {
         // TODO: add up all the values not just the primary one
         Duration::add_int(rhs, self.primary())
     }
@@ -470,17 +483,17 @@ impl Sub for Duration {
 }
 
 impl Sub<Duration> for Date {
-    type Output = DateArithmeticOutput;
+    type Output = Result<DateArithmeticOutput, TimeSeriesError>;
 
-    fn sub(self, rhs: Duration) -> DateArithmeticOutput {
+    fn sub(self, rhs: Duration) -> Result<DateArithmeticOutput, TimeSeriesError> {
         Duration::add_int(rhs.invert(), self)
     }
 }
 
 impl Sub<Duration> for DateArithmeticOutput {
-    type Output = DateArithmeticOutput;
+    type Output = Result<DateArithmeticOutput, TimeSeriesError>;
 
-    fn sub(self, rhs: Duration) -> DateArithmeticOutput {
+    fn sub(self, rhs: Duration) -> Result<DateArithmeticOutput, TimeSeriesError> {
         // TODO: add up all the values not just the primary one
         Duration::add_int(rhs.invert(), self.primary())
     }
@@ -630,16 +643,21 @@ mod tests {
     #[test]
     fn create_from_duration() {
         let mut td = time::Duration::seconds_f64(10.0);
-        let mut d = crate::duration::Duration::from_time_duration(td);
+        let mut d = crate::duration::Duration::from_time_duration(td).unwrap();
         assert_eq!((d.days(), d.months(), d.years()), (0, 0, 0));
 
         td = time::Duration::seconds_f64(60.0 * 60.0 * 24.0);
-        d = crate::duration::Duration::from_time_duration(td);
+        d = crate::duration::Duration::from_time_duration(td).unwrap();
         assert_eq!((d.days(), d.months(), d.years()), (1, 0, 0));
 
         td = time::Duration::seconds_f64(40.0 * 60.0 * 60.0 * 24.0);
-        d = crate::duration::Duration::from_time_duration(td);
+        d = crate::duration::Duration::from_time_duration(td).unwrap();
         assert_eq!((d.days(), d.months(), d.years()), (40, 0, 0));
+
+        // Test for value above i32 range
+        td = time::Duration::seconds_f64(2_147_483_648.0 * 60.0 * 60.0 * 24.0);
+        let e = crate::duration::Duration::from_time_duration(td);
+        assert!(e.is_err());
     }
 
     #[test]
@@ -687,48 +705,48 @@ mod tests {
         let mut duration = Duration::new(1, 2, 3);
 
         // Test the addition is ok
-        let mut d = (date + duration).primary();
+        let mut d = (date + duration).unwrap().primary();
         assert_eq!((d.year(), d.month() as u8, d.day()), (2025, 3, 11));
 
         // Add a negative duration
         duration = Duration::new(-1, 0, 0);
-        d = (date + duration).primary();
+        d = (date + duration).unwrap().primary();
         assert_eq!((d.year(), d.month() as u8, d.day()), (2022, 1, 9));
 
         // Add a negative wrap over year end
         duration = Duration::new(-10, 0, -1);
-        d = (date + duration).primary();
+        d = (date + duration).unwrap().primary();
         assert_eq!((d.year(), d.month() as u8, d.day()), (2020, 12, 31));
 
         // Add a negative wrap over year end, with possible bad intermediate date
         duration = Duration::new(-10, -1, -1);
-        d = (date + duration).primary();
+        d = (date + duration).unwrap().primary();
         assert_eq!((d.year(), d.month() as u8, d.day()), (2020, 11, 30));
 
         // Try a day overflowing add
         duration = Duration::new(50, 0, 0);
-        d = (date + duration).primary();
+        d = (date + duration).unwrap().primary();
         assert_eq!((d.year(), d.month() as u8, d.day()), (2022, 3, 1));
 
         // Try a month overflowing add
         duration = Duration::new(0, 30, 0);
-        d = (date + duration).primary();
+        d = (date + duration).unwrap().primary();
         assert_eq!((d.year(), d.month() as u8, d.day()), (2024, 7, 10));
 
         // Try a day overflowing add of negative number
         duration = Duration::new(-50, 0, 0);
-        d = (date + duration).primary();
+        d = (date + duration).unwrap().primary();
         assert_eq!((d.year(), d.month() as u8, d.day()), (2021, 11, 21));
 
         // Try a month overflowing add of negative number
         duration = Duration::new(0, -30, 0);
-        d = (date + duration).primary();
+        d = (date + duration).unwrap().primary();
         assert_eq!((d.year(), d.month() as u8, d.day()), (2019, 7, 10));
 
         // Try a day overflowing add + leap year
         duration = Duration::new(50, 0, 0);
         date = Date::from_calendar_date(2024, Month::January, 10).unwrap();
-        d = (date + duration).primary();
+        d = (date + duration).unwrap().primary();
         assert_eq!((d.year(), d.month() as u8, d.day()), (2024, 2, 29));
     }
 
@@ -739,12 +757,12 @@ mod tests {
         let mut duration = Duration::new(1, 2, 3);
 
         // Test the addition is ok
-        let mut d = (duration + date).primary();
+        let mut d = (duration + date).unwrap().primary();
         assert_eq!((d.year(), d.month() as u8, d.day()), (2025, 3, 11));
 
         // Add a negative duration
         duration = Duration::new(-1, 0, 0);
-        d = (duration + date).primary();
+        d = (duration + date).unwrap().primary();
         assert_eq!((d.year(), d.month() as u8, d.day()), (2022, 1, 9));
     }
 
@@ -755,50 +773,50 @@ mod tests {
         let mut duration = Duration::new(1, 2, 3);
 
         // Test the subtraction is ok
-        let mut d = (date - duration).primary();
+        let mut d = (date - duration).unwrap().primary();
         assert_eq!((d.year(), d.month() as u8, d.day()), (2019, 10, 9));
 
         // Subtraction a negative duration
         duration = Duration::new(-1, 0, 0);
-        d = (date - duration).primary();
+        d = (date - duration).unwrap().primary();
         assert_eq!((d.year(), d.month() as u8, d.day()), (2022, 12, 11));
 
         // Subtraction a negative wrap over year end
         duration = Duration::new(-25, 0, -1);
-        d = (date - duration).primary();
+        d = (date - duration).unwrap().primary();
         assert_eq!((d.year(), d.month() as u8, d.day()), (2024, 1, 4));
 
         // Subtraction a negative wrap over year end, with possible bad intermediate date
         date = Date::from_calendar_date(2022, Month::December, 31).unwrap();
         duration = Duration::new(-10, -2, -1);
-        d = (date - duration).primary();
+        d = (date - duration).unwrap().primary();
         assert_eq!((d.year(), d.month() as u8, d.day()), (2024, 3, 10));
 
         // Try a day overflowing subtraction
         date = Date::from_calendar_date(2022, Month::December, 10).unwrap();
         duration = Duration::new(50, 0, 0);
-        d = (date - duration).primary();
+        d = (date - duration).unwrap().primary();
         assert_eq!((d.year(), d.month() as u8, d.day()), (2022, 10, 21));
 
         // Try a month overflowing subtraction
         duration = Duration::new(0, 30, 0);
-        d = (date - duration).primary();
+        d = (date - duration).unwrap().primary();
         assert_eq!((d.year(), d.month() as u8, d.day()), (2020, 6, 10));
 
         // Try a day overflowing subtraction of negative number
         duration = Duration::new(-81, 0, 0);
-        d = (date - duration).primary();
+        d = (date - duration).unwrap().primary();
         assert_eq!((d.year(), d.month() as u8, d.day()), (2023, 3, 1));
 
         // Try a month overflowing subtraction of negative number
         duration = Duration::new(0, -30, 0);
-        d = (date - duration).primary();
+        d = (date - duration).unwrap().primary();
         assert_eq!((d.year(), d.month() as u8, d.day()), (2025, 6, 10));
 
         // Try a day overflowing subtraction + leap year
         duration = Duration::new(50, 0, 0);
         date = Date::from_calendar_date(2024, Month::March, 10).unwrap();
-        d = (date - duration).primary();
+        d = (date - duration).unwrap().primary();
         assert_eq!((d.year(), d.month() as u8, d.day()), (2024, 1, 20));
     }
 
@@ -814,7 +832,7 @@ mod tests {
         // Crazy but true
         d = Date::from_calendar_date(2022, Month::February, 28).unwrap();
         dur = Duration::new(2, 3, 0);
-        res = d + dur;
+        res = (d + dur).unwrap();
         t = Date::from_calendar_date(2022, Month::May, 29).unwrap();
         assert!(!res.contains(t));
         t = Date::from_calendar_date(2022, Month::May, 30).unwrap();
@@ -831,7 +849,7 @@ mod tests {
         // Crazy but true
         d = Date::from_calendar_date(2022, Month::February, 27).unwrap();
         dur = Duration::new(2, 3, 0);
-        res = d + dur;
+        res = (d + dur).unwrap();
         t = Date::from_calendar_date(2022, Month::May, 29).unwrap();
         assert!(res.contains(t));
         t = Date::from_calendar_date(2022, Month::May, 30).unwrap();
@@ -898,9 +916,9 @@ mod tests {
                     if let Some(d) = d1.next_day() {
                         d1 = d;
                     }
-                    d2 = d1 - dur + dur;
+                    d2 = ((d1 - dur).unwrap() + dur).unwrap();
                     assert!(d2.contains(d1));
-                    d2 = d1 + dur - dur;
+                    d2 = ((d1 + dur).unwrap() - dur).unwrap();
                     assert!(d2.contains(d1));
                 }
             }
@@ -912,12 +930,12 @@ mod tests {
         let dur = Duration::new(365, 0, 0);
         let mut tar = Duration::new(30, 11, 0);
         let mut date = Date::from_calendar_date(2024, Month::February, 25).unwrap();
-        let mut res = dur.normalise(date);
+        let mut res = dur.normalise(date).unwrap();
         assert_eq!(res, tar);
 
         tar = Duration::new(0, 0, 1);
         date = Date::from_calendar_date(2022, Month::February, 25).unwrap();
-        res = dur.normalise(date);
+        res = dur.normalise(date).unwrap();
         assert_eq!(res, tar);
     }
 
