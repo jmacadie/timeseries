@@ -10,6 +10,7 @@ pub enum TimeSeriesError {
     BadShift(Period),
     TimeDurationTooLarge,
     DateOutOfRange,
+    AggregationTypeNotImplemented,
 }
 
 impl fmt::Display for TimeSeriesError {
@@ -35,6 +36,9 @@ impl fmt::Display for TimeSeriesError {
                 "time::Duration too large. Can only hold values within i32"
             ),
             TimeSeriesError::DateOutOfRange => write!(f, "Operation creates a date out of range"),
+            TimeSeriesError::AggregationTypeNotImplemented => {
+                write!(f, "Aggregation type is not yet implemented")
+            }
         }
     }
 }

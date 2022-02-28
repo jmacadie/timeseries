@@ -3,12 +3,11 @@ use std::cmp;
 use std::ops::{Add, Div, Mul, Rem, Sub};
 use time::Date;
 
-/*pub enum AggType {
+pub enum AggType {
     Add,
-    ArithmeticMean,
-    GeometricMean,
-    LinearInterpolation,
-} */
+    Mean,
+    Linear,
+}
 
 /// # TimeSeries
 ///
@@ -51,6 +50,16 @@ where
 {
     // region: constructors
 
+    /// Internal method to create a new TimeSeries object
+    ///
+    /// Does not check that the  timeline and the values match in
+    /// length. This is a fundamental requirement for TimeSeries
+    /// objects to be well formed, so restricting this to be an internal
+    /// method only
+    fn new_unchecked(timeline: &'a Timeline, values: Vec<T>) -> Self {
+        TimeSeries { timeline, values }
+    }
+
     /// Create a new TimeSeries object
     ///
     /// This method will throw an error if the length of the timeline provided and the
@@ -59,7 +68,7 @@ where
         if values.len() != timeline.len {
             return Err(TimeSeriesError::TimelineDoesNotMatchValues);
         }
-        Ok(TimeSeries { timeline, values })
+        Ok(TimeSeries::new_unchecked(timeline, values))
     }
 
     // TODO: implement other ways of creating a TS object:
@@ -173,15 +182,13 @@ where
 }
 
 // region: change_periodicity
-/*impl<'a, T> TimeSeries<'a, T>
-where
-    T: AddAssign + Add<Output = T> + Sub<Output = T> + Mul<i32> + Div<i32> + Copy,
-{
+// TODO: can we do this for other types as well?
+impl<'a> TimeSeries<'a, f64> {
     pub fn change_periodicity(
         &self,
         timeline: &'a Timeline,
         transform: AggType,
-    ) -> Result<TimeSeries<'a, T>, TimeSeriesError> {
+    ) -> Result<Self, TimeSeriesError> {
         if timeline.range != self.timeline.range {
             return Err(TimeSeriesError::TimelinesDoNotMatch);
         }
@@ -193,76 +200,88 @@ where
                 if timeline.periodicity > self.timeline.periodicity {
                     Ok(self.add_up(timeline))
                 } else {
-                    //Ok(self.add_down(timeline))
-                    Err("This type of aggregation is not yet implemented")
+                    Ok(self.add_down(timeline))
                 }
             }
-            _ => Err("This type of aggregation is not yet implemented"),
+            _ => Err(TimeSeriesError::AggregationTypeNotImplemented),
         }
     }
 
+    /// Internal method to change the periodicity of a TimeSeries object
+    /// from a smaller time period to a bigger one, i.e. weeks to quarters
+    /// using addition as the aggregation method
     fn add_up(&self, target_timeline: &'a Timeline) -> Self {
-        let mut source_range: DateRange;
-        let mut target_iter = target_timeline.clone();
-        // TODO: remove unwrap
-        let mut target_range = target_iter.next().unwrap();
-        let mut data: Vec<T> = Vec::with_capacity(target_timeline.len as usize);
-        let mut val: T;
-        let mut res: T;
+        let source_iter = *self.timeline;
+        let mut target_iter = *target_timeline;
+        let mut target_day = target_iter
+            .next()
+            .unwrap_or(target_timeline.range)
+            .last_day();
+        let mut data: Vec<f64> = Vec::with_capacity(target_timeline.len);
+        let mut val = self.values[0]; // Initialising to avoid a compiler warning but not actually needed
         let mut start_period = true;
 
         //  loop through every source period
-        for i in 0..self.timeline.len {
-            // TODO: remove unwrap
-            source_range = self.timeline.index(i as i32).unwrap();
-            if target_range.fully_contains(&source_range) {
-                if start_period {
-                    start_period = false;
-                    val = self.values[i];
-                } else {
-                    val += self.values[i];
-                }
-                if target_range.last_day() == source_range.last_day() {
-                    // Append the data
-                    data.push(val);
-
-                    // Set vals to start the next target period
-                    start_period = true;
-                    // TODO: remove unwrap
-                    target_range = target_iter.next().unwrap();
-                }
+        for (source_range, source_val) in source_iter.zip(self.values.iter()) {
+            if start_period {
+                start_period = false;
+                val = *source_val;
             } else {
-                // Target does not fully contain the source so only part of the
-                // source period applies to the current target with the balance
-                // applying to the next
-
-                // Work out the proportion of the source period that applies to the target period
-                // TODO: remove unwrap
-                res = self.values[i] * target_range.intersect(&source_range).unwrap().as_days()
-                    / source_range.as_days();
-                val += res;
-
-                // TODO: don't think we should ever be at a start period but leaving it in commented out
-                // to provoke future thought
-                /*if start_period {
-                    val = res;
-                } else {
-                    val += res;
-                }*/
-
+                val += source_val;
+            }
+            // If we've got to the end of the target range then
+            // push in the aggregated value & move on
+            if source_range.last_day() >= target_day {
                 // Append the data
                 data.push(val);
-
                 // Set vals to start the next target period
-                start_period = false; // false becasue we already have a part period
-                val = self.values[i] - res;
-                // TODO: remove unwrap
-                target_range = target_iter.next().unwrap();
+                start_period = true;
+                target_day = target_iter
+                    .next()
+                    .unwrap_or(target_timeline.range)
+                    .last_day();
             }
         }
-        TimeSeries::new(target_timeline, data).unwrap()
+        TimeSeries::new_unchecked(target_timeline, data)
     }
-}*/
+
+    /// Internal method to change the periodicity of a TimeSeries object
+    /// from a bigger time period to a smaller one, i.e. years to months
+    /// using addition as the aggregation method. Since we're increasing
+    /// the number of time periods it will be inferred that the target
+    /// time series values will all be the same for each source period (i.e
+    /// we'll divide the source values by the number target periods). There
+    /// are potentially other ways to do this
+    fn add_down(&self, target_timeline: &'a Timeline) -> Self {
+        let source_iter = *self.timeline;
+        let mut target_iter = *target_timeline;
+        let mut source_day: Date;
+        let mut target_day: Date;
+        let mut data: Vec<f64> = Vec::with_capacity(target_timeline.len);
+        let mut vals: Vec<f64>;
+        let mut i: usize;
+
+        //  loop through every source period
+        for (source_range, source_val) in source_iter.zip(self.values.iter()) {
+            // Count through the target ranges until we have spanned the current source range
+            i = 0;
+            source_day = source_range.last_day();
+            loop {
+                i += 1;
+                target_day = target_iter
+                    .next()
+                    .unwrap_or(target_timeline.range)
+                    .last_day();
+                if target_day >= source_day {
+                    break;
+                }
+            }
+            vals = vec![source_val / i as f64; i];
+            data.append(&mut vals);
+        }
+        TimeSeries::new_unchecked(target_timeline, data)
+    }
+}
 // endregion change_periodicity
 
 // region: update
@@ -305,9 +324,7 @@ where
             let v = v1.into();
             data.push(v);
         }
-        // Think I have to have an unwrap here as can't see how this
-        // can ever error out
-        TimeSeries::new(self.timeline, data).unwrap()
+        TimeSeries::new_unchecked(self.timeline, data)
     }
 }
 
@@ -322,9 +339,7 @@ where
             let v = v1.into();
             data.push(v);
         }
-        // Think I have to have an unwrap here as can't see how this
-        // can ever error out
-        TimeSeries::new(self.timeline, data).unwrap()
+        TimeSeries::new_unchecked(self.timeline, data)
     }
 }
 // endregion cast_values
@@ -334,7 +349,7 @@ impl<'a> TimeSeries<'a, i32> {
     /// For a given timline, create a TimeSeries of 32-bit integers, all with value 0
     pub fn empty_i(timeline: &'a Timeline) -> TimeSeries<'a, i32> {
         let values = vec![0; timeline.len as usize];
-        TimeSeries { timeline, values }
+        TimeSeries::new_unchecked(timeline, values)
     }
 }
 
@@ -342,7 +357,7 @@ impl<'a> TimeSeries<'a, f64> {
     /// For a given timline, create a TimeSeries of 64-bit floats, all with value 0
     pub fn empty_f(timeline: &'a Timeline) -> TimeSeries<'a, f64> {
         let values = vec![0.0; timeline.len as usize];
-        TimeSeries { timeline, values }
+        TimeSeries::new_unchecked(timeline, values)
     }
 }
 // endregion empty_constuctors
@@ -452,8 +467,7 @@ where
 
     fn add(self, rhs: T) -> TimeSeries<'a, T> {
         let data = self.values.iter().map(|&a| a + rhs).collect();
-        // Went with unwrap here as a TimeSeries created in these conditions should always be OK
-        TimeSeries::new(self.timeline, data).unwrap()
+        TimeSeries::new_unchecked(self.timeline, data)
     }
 }
 // endregion arithmetic_add
@@ -490,8 +504,7 @@ where
 
     fn sub(self, rhs: T) -> TimeSeries<'a, T> {
         let data = self.values.iter().map(|&a| a - rhs).collect();
-        // Went with unwrap here as a TimeSeries created in these conditions should always be OK
-        TimeSeries::new(self.timeline, data).unwrap()
+        TimeSeries::new_unchecked(self.timeline, data)
     }
 }
 // endregion arithmetic_sub
@@ -528,8 +541,7 @@ where
 
     fn mul(self, rhs: T) -> TimeSeries<'a, T> {
         let data = self.values.iter().map(|&a| a * rhs).collect();
-        // Went with unwrap here as a TimeSeries created in these conditions should always be OK
-        TimeSeries::new(self.timeline, data).unwrap()
+        TimeSeries::new_unchecked(self.timeline, data)
     }
 }
 // endregion arithmetic_mul
@@ -566,8 +578,7 @@ where
 
     fn div(self, rhs: T) -> TimeSeries<'a, T> {
         let data = self.values.iter().map(|&a| a / rhs).collect();
-        // Went with unwrap here as a TimeSeries created in these conditions should always be OK
-        TimeSeries::new(self.timeline, data).unwrap()
+        TimeSeries::new_unchecked(self.timeline, data)
     }
 }
 // endregion arithmetic_div
@@ -604,8 +615,7 @@ where
 
     fn rem(self, rhs: T) -> TimeSeries<'a, T> {
         let data = self.values.iter().map(|&a| a % rhs).collect();
-        // Went with unwrap here as a TimeSeries created in these conditions should always be OK
-        TimeSeries::new(self.timeline, data).unwrap()
+        TimeSeries::new_unchecked(self.timeline, data)
     }
 }
 // endregion arithmetic_rem
@@ -771,6 +781,174 @@ mod tests {
         let ts1 = TimeSeries::new(&tl, v1).unwrap();
 
         assert_eq!(ts1.cast_i32().values, vec![1, 1, 0, 1]);
+    }
+
+    #[test]
+    fn change_periodicity_add_up_f64() {
+        // Create a date range
+        let from = Date::from_calendar_date(2022, Month::January, 1).unwrap();
+        let dur = Duration::new(0, 0, 2);
+        let dr = DateRange::from_duration(from, dur).unwrap();
+
+        // Create timelines to resize to
+        let tly = Timeline::new(dr, Period::Year);
+        let tlq = Timeline::new(dr, Period::Quarter);
+        let tlm = Timeline::new(dr, Period::Month);
+        let tlw = Timeline::new(dr, Period::Week);
+
+        // Create a quarterly timeseries
+        let tl1 = Timeline::new(dr, Period::Quarter);
+        let mut v = vec![1, 2, 3, 4, 5, 6, 7, 8];
+        let mut ts1 = TimeSeries::new(&tl1, v).unwrap().cast_f64();
+
+        // Test quarters to years
+        let mut ts2 = ts1.change_periodicity(&tly, AggType::Add).unwrap();
+        assert_eq!(ts2.values, vec![10.0, 26.0]);
+
+        // Create a monthly timeseries
+        let tl2 = Timeline::new(dr, Period::Month);
+        v = vec![
+            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+        ];
+        ts1 = TimeSeries::new(&tl2, v).unwrap().cast_f64();
+
+        // Test months to years
+        ts2 = ts1.change_periodicity(&tly, AggType::Add).unwrap();
+        assert_eq!(ts2.values, vec![78.0, 222.0]);
+
+        // Test months to quarters
+        ts2 = ts1.change_periodicity(&tlq, AggType::Add).unwrap();
+        assert_eq!(
+            ts2.values,
+            vec![6.0, 15.0, 24.0, 33.0, 42.0, 51.0, 60.0, 69.0]
+        );
+
+        // Create a weekly timeseries
+        let tl3 = Timeline::new(dr, Period::Week);
+        v = Vec::new();
+        for i in 0..105 {
+            v.push(i);
+        }
+        ts1 = TimeSeries::new(&tl3, v).unwrap().cast_f64();
+
+        // Test weeks to years
+        ts2 = ts1.change_periodicity(&tly, AggType::Add).unwrap();
+        assert_eq!(ts2.values, vec![1378.0, 4082.0]);
+
+        // Test weeks to quarters
+        ts2 = ts1.change_periodicity(&tlq, AggType::Add).unwrap();
+        assert_eq!(
+            ts2.values,
+            vec![78.0, 247.0, 416.0, 637.0, 702.0, 923.0, 1183.0, 1274.0]
+        );
+
+        // Test weeks to months
+        ts2 = ts1.change_periodicity(&tlm, AggType::Add).unwrap();
+        assert_eq!(
+            ts2.values,
+            vec![
+                10.0, 26.0, 42.0, 75.0, 78.0, 94.0, 140.0, 130.0, 146.0, 205.0, 182.0, 250.0,
+                218.0, 234.0, 250.0, 335.0, 286.0, 302.0, 400.0, 338.0, 445.0, 374.0, 390.0, 510.0
+            ]
+        );
+
+        // Create a daily timeseries
+        let tl4 = Timeline::new(dr, Period::Day);
+        v = Vec::new();
+        for i in 0..730 {
+            v.push(i);
+        }
+        ts1 = TimeSeries::new(&tl4, v).unwrap().cast_f64();
+
+        // Test days to years
+        ts2 = ts1.change_periodicity(&tly, AggType::Add).unwrap();
+        assert_eq!(ts2.values, vec![66430.0, 199655.0]);
+
+        // Test days to quarters
+        ts2 = ts1.change_periodicity(&tlq, AggType::Add).unwrap();
+        assert_eq!(
+            ts2.values,
+            vec![4005.0, 12285.0, 20838.0, 29302.0, 36855.0, 45500.0, 54418.0, 62882.0]
+        );
+
+        // Test days to months
+        ts2 = ts1.change_periodicity(&tlm, AggType::Add).unwrap();
+        assert_eq!(
+            ts2.values,
+            vec![
+                465.0, 1246.0, 2294.0, 3135.0, 4185.0, 4965.0, 6076.0, 7037.0, 7725.0, 8928.0,
+                9555.0, 10819.0, 11780.0, 11466.0, 13609.0, 14085.0, 15500.0, 15915.0, 17391.0,
+                18352.0, 18675.0, 20243.0, 20505.0, 22134.0
+            ]
+        );
+
+        // Test days to weeks
+        ts2 = ts1.change_periodicity(&tlw, AggType::Add).unwrap();
+        assert_eq!(
+            ts2.values,
+            vec![
+                21.0, 70.0, 119.0, 168.0, 217.0, 266.0, 315.0, 364.0, 413.0, 462.0, 511.0, 560.0,
+                609.0, 658.0, 707.0, 756.0, 805.0, 854.0, 903.0, 952.0, 1001.0, 1050.0, 1099.0,
+                1148.0, 1197.0, 1246.0, 1295.0, 1344.0, 1393.0, 1442.0, 1491.0, 1540.0, 1589.0,
+                1638.0, 1687.0, 1736.0, 1785.0, 1834.0, 1883.0, 1932.0, 1981.0, 2030.0, 2079.0,
+                2128.0, 2177.0, 2226.0, 2275.0, 2324.0, 2373.0, 2422.0, 2471.0, 2520.0, 2569.0,
+                2618.0, 2667.0, 2716.0, 2765.0, 2814.0, 2863.0, 2912.0, 2961.0, 3010.0, 3059.0,
+                3108.0, 3157.0, 3206.0, 3255.0, 3304.0, 3353.0, 3402.0, 3451.0, 3500.0, 3549.0,
+                3598.0, 3647.0, 3696.0, 3745.0, 3794.0, 3843.0, 3892.0, 3941.0, 3990.0, 4039.0,
+                4088.0, 4137.0, 4186.0, 4235.0, 4284.0, 4333.0, 4382.0, 4431.0, 4480.0, 4529.0,
+                4578.0, 4627.0, 4676.0, 4725.0, 4774.0, 4823.0, 4872.0, 4921.0, 4970.0, 5019.0,
+                5068.0, 1457.0
+            ]
+        );
+    }
+
+    #[test]
+    fn change_periodicity_add_down_f64() {
+        // Create a date range
+        let from = Date::from_calendar_date(2022, Month::January, 1).unwrap();
+        let dur = Duration::new(0, 0, 2);
+        let dr = DateRange::from_duration(from, dur).unwrap();
+
+        // Create timelines to resize to
+        let tlq = Timeline::new(dr, Period::Quarter);
+        let tlm = Timeline::new(dr, Period::Month);
+        let tlw = Timeline::new(dr, Period::Week);
+        let tld = Timeline::new(dr, Period::Day);
+
+        // Create a yearly timeseries
+        let tl1 = Timeline::new(dr, Period::Year);
+        let v = vec![1, 2];
+        let ts1 = TimeSeries::new(&tl1, v).unwrap().cast_f64();
+
+        // Test years to quarters
+        let mut ts2 = ts1.change_periodicity(&tlq, AggType::Add).unwrap();
+        assert!((ts2.values[0] - 0.25).abs() < 1e-10);
+        assert!((ts2.values[3] - 0.25).abs() < 1e-10);
+        assert!((ts2.values[4] - 0.5).abs() < 1e-10);
+        assert!((ts2.values[7] - 0.5).abs() < 1e-10);
+
+        // Test years to months
+        ts2 = ts1.change_periodicity(&tlm, AggType::Add).unwrap();
+        assert!((ts2.values[0] - 0.083333333333).abs() < 1e-10);
+        assert!((ts2.values[11] - 0.083333333333).abs() < 1e-10);
+        assert!((ts2.values[12] - 0.166666666666).abs() < 1e-10);
+        assert!((ts2.values[23] - 0.166666666666).abs() < 1e-10);
+
+        // Test years to weeks
+        ts2 = ts1.change_periodicity(&tlw, AggType::Add).unwrap();
+        assert!((ts2.values[0] - 0.018867924528).abs() < 1e-10);
+        assert!((ts2.values[52] - 0.018867924528).abs() < 1e-10);
+        assert!((ts2.values[53] - 0.038461538462).abs() < 1e-10);
+        assert!((ts2.values[104] - 0.038461538462).abs() < 1e-10);
+
+        // Test years to days
+        ts2 = ts1.change_periodicity(&tld, AggType::Add).unwrap();
+        assert!((ts2.values[0] - 0.002739726027).abs() < 1e-10);
+        assert!((ts2.values[364] - 0.002739726027).abs() < 1e-10);
+        assert!((ts2.values[365] - 0.005479452055).abs() < 1e-10);
+        assert!((ts2.values[729] - 0.005479452055).abs() < 1e-10);
+
+        // TODO: test from other periodicity than years ... maybe
     }
 
     #[test]
