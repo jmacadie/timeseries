@@ -175,10 +175,6 @@ where
         self.values.get(start..=end)
     }
     // endregion getters
-
-    // region: change_period
-
-    // TODO: implement a way of building corkscrews with multiple operations
 }
 
 // region: change_periodicity
@@ -213,33 +209,44 @@ impl<'a> TimeSeries<'a, f64> {
     fn add_up(&self, target_timeline: &'a Timeline) -> Self {
         let source_iter = *self.timeline;
         let mut target_iter = *target_timeline;
-        let mut target_day = target_iter
-            .next()
-            .unwrap_or(target_timeline.range)
-            .last_day();
+        let mut target_day = target_iter.next().unwrap_or(target_timeline.range).to;
         let mut data: Vec<f64> = Vec::with_capacity(target_timeline.len);
-        let mut val = self.values[0]; // Initialising to avoid a compiler warning but not actually needed
+        let mut val = 0.0; // Initialising to avoid a compiler warning but not actually needed
+        let mut res;
         let mut start_period = true;
 
         //  loop through every source period
         for (source_range, source_val) in source_iter.zip(self.values.iter()) {
-            if start_period {
-                start_period = false;
-                val = *source_val;
+            if source_range.to <= target_day {
+                // If source fully within target no need to part split periods
+                if start_period {
+                    start_period = false;
+                    val = *source_val;
+                } else {
+                    val += source_val;
+                }
+                // If we've got to the end of the target range then
+                // push in the aggregated value & move on
+                if source_range.to == target_day {
+                    // Append the data
+                    data.push(val);
+                    // Set vals to start the next target period
+                    start_period = true;
+                    target_day = target_iter.next().unwrap_or(target_timeline.range).to;
+                }
             } else {
-                val += source_val;
-            }
-            // If we've got to the end of the target range then
-            // push in the aggregated value & move on
-            if source_range.last_day() >= target_day {
-                // Append the data
+                // Source partially beyond the target period
+                // allocate part of the source to the target period and the rest to the
+                // next target period
+                // split done by day count
+                res = source_val
+                    * f64::from(DateRange::new(source_range.from, target_day).as_days())
+                    / f64::from(source_range.as_days());
+                val += res;
                 data.push(val);
-                // Set vals to start the next target period
-                start_period = true;
-                target_day = target_iter
-                    .next()
-                    .unwrap_or(target_timeline.range)
-                    .last_day();
+                start_period = false; // Needed?
+                val = source_val - res;
+                target_day = target_iter.next().unwrap_or(target_timeline.range).to;
             }
         }
         TimeSeries::new_unchecked(target_timeline, data)
@@ -261,17 +268,17 @@ impl<'a> TimeSeries<'a, f64> {
         let mut vals: Vec<f64>;
         let mut i: usize;
 
+        // TODO: this doesn't mirror the add-up method in that it does whole period allocations
+        // when working with years/quarters/months into weeks the target periods won't always
+        // line up with the source periods, so values should be spilt across them proportionately
         //  loop through every source period
         for (source_range, source_val) in source_iter.zip(self.values.iter()) {
             // Count through the target ranges until we have spanned the current source range
             i = 0;
-            source_day = source_range.last_day();
+            source_day = source_range.to;
             loop {
                 i += 1;
-                target_day = target_iter
-                    .next()
-                    .unwrap_or(target_timeline.range)
-                    .last_day();
+                target_day = target_iter.next().unwrap_or(target_timeline.range).to;
                 if target_day >= source_day {
                     break;
                 }
@@ -348,7 +355,7 @@ where
 impl<'a> TimeSeries<'a, i32> {
     /// For a given timline, create a TimeSeries of 32-bit integers, all with value 0
     pub fn empty_i(timeline: &'a Timeline) -> TimeSeries<'a, i32> {
-        let values = vec![0; timeline.len as usize];
+        let values = vec![0; timeline.len];
         TimeSeries::new_unchecked(timeline, values)
     }
 }
@@ -356,14 +363,16 @@ impl<'a> TimeSeries<'a, i32> {
 impl<'a> TimeSeries<'a, f64> {
     /// For a given timline, create a TimeSeries of 64-bit floats, all with value 0
     pub fn empty_f(timeline: &'a Timeline) -> TimeSeries<'a, f64> {
-        let values = vec![0.0; timeline.len as usize];
+        let values = vec![0.0; timeline.len];
         TimeSeries::new_unchecked(timeline, values)
     }
 }
 // endregion empty_constuctors
 
+// TODO: implement a way of building corkscrews with multiple operations
 // TODO: provide a means to have a generic calc on more than a pair of TS objects
 //  current implementation is strictly limited to two operations
+
 // region: generic_func
 
 impl<'a, T> TimeSeries<'a, T> {
@@ -833,24 +842,46 @@ mod tests {
 
         // Test weeks to years
         ts2 = ts1.change_periodicity(&tly, AggType::Add).unwrap();
-        assert_eq!(ts2.values, vec![1378.0, 4082.0]);
+        assert!((ts2.values[0] - 1333.428571).abs() < 1e-5);
+        assert!((ts2.values[1] - 4126.571429).abs() < 1e-5);
 
         // Test weeks to quarters
         ts2 = ts1.change_periodicity(&tlq, AggType::Add).unwrap();
-        assert_eq!(
-            ts2.values,
-            vec![78.0, 247.0, 416.0, 637.0, 702.0, 923.0, 1183.0, 1274.0]
-        );
+        assert!((ts2.values[0] - 76.28571429).abs() < 1e-5);
+        assert!((ts2.values[1] - 245.1428571).abs() < 1e-5);
+        assert!((ts2.values[2] - 419.5714286).abs() < 1e-5);
+        assert!((ts2.values[3] - 592.4285714).abs() < 1e-5);
+        assert!((ts2.values[4] - 746.5714286).abs() < 1e-5);
+        assert!((ts2.values[5] - 923.0).abs() < 1e-5);
+        assert!((ts2.values[6] - 1105.0).abs() < 1e-5);
+        assert!((ts2.values[7] - 1352.0).abs() < 1e-5);
 
         // Test weeks to months
         ts2 = ts1.change_periodicity(&tlm, AggType::Add).unwrap();
-        assert_eq!(
-            ts2.values,
-            vec![
-                10.0, 26.0, 42.0, 75.0, 78.0, 94.0, 140.0, 130.0, 146.0, 205.0, 182.0, 250.0,
-                218.0, 234.0, 250.0, 335.0, 286.0, 302.0, 400.0, 338.0, 445.0, 374.0, 390.0, 510.0
-            ]
-        );
+        assert!((ts2.values[0] - 7.714285714).abs() < 1e-5);
+        assert!((ts2.values[1] - 23.71428571).abs() < 1e-5);
+        assert!((ts2.values[2] - 44.85714286).abs() < 1e-5);
+        assert!((ts2.values[3] - 62.14285714).abs() < 1e-5);
+        assert!((ts2.values[4] - 83.57142857).abs() < 1e-5);
+        assert!((ts2.values[5] - 99.42857143).abs() < 1e-5);
+        assert!((ts2.values[6] - 122.1428571).abs() < 1e-5);
+        assert!((ts2.values[7] - 141.7142857).abs() < 1e-5);
+        assert!((ts2.values[8] - 155.7142857).abs() < 1e-5);
+        assert!((ts2.values[9] - 180.4285714).abs() < 1e-5);
+        assert!((ts2.values[10] - 193.1428571).abs() < 1e-5);
+        assert!((ts2.values[11] - 218.8571429).abs() < 1e-5);
+        assert!((ts2.values[12] - 238.5714286).abs() < 1e-5);
+        assert!((ts2.values[13] - 232.2857143).abs() < 1e-5);
+        assert!((ts2.values[14] - 275.7142857).abs() < 1e-5);
+        assert!((ts2.values[15] - 285.7142857).abs() < 1e-5);
+        assert!((ts2.values[16] - 314.4285714).abs() < 1e-5);
+        assert!((ts2.values[17] - 322.8571429).abs() < 1e-5);
+        assert!((ts2.values[18] - 353.1428571).abs() < 1e-5);
+        assert!((ts2.values[19] - 372.5714286).abs() < 1e-5);
+        assert!((ts2.values[20] - 379.2857143).abs() < 1e-5);
+        assert!((ts2.values[21] - 411.2857143).abs() < 1e-5);
+        assert!((ts2.values[22] - 416.5714286).abs() < 1e-5);
+        assert!((ts2.values[23] - 524.1428571).abs() < 1e-5);
 
         // Create a daily timeseries
         let tl4 = Timeline::new(dr, Period::Day);
