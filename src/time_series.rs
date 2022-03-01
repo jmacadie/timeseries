@@ -71,8 +71,39 @@ where
         Ok(TimeSeries::new_unchecked(timeline, values))
     }
 
-    // TODO: implement other ways of creating a TS object:
-    //  * just provide some values and then pad out to full timeline
+    /// Create a new TimeSeries object with a partial
+    /// specification of the input values. The method will
+    /// pad out values either side of the provided values to
+    /// ensure that the TimeSeries is properly formed.
+    ///
+    /// If the values, after the start offset, do not fit within
+    /// the timeline the rightmost values will be silently discarded.
+    /// In extremis, if the start index provided is greater than the
+    /// timeline, then the returned TimeSeries will only contain the
+    /// pad values and none of the values vector will remain
+    pub fn new_partial(timeline: &'a Timeline, start: usize, values: Vec<T>, pad: T) -> Self {
+        let mut data;
+        // If start is after the timeline then just return a vector full of the pad value
+        if start >= timeline.len {
+            data = vec![pad; timeline.len];
+            return TimeSeries::new_unchecked(timeline, data);
+        }
+        // Pad before the start
+        let p = pad.clone();
+        data = vec![p; start];
+        // Add the values
+        let val_len = cmp::min(values.len(), timeline.len - start);
+        data.extend_from_slice(&values[..val_len]);
+        // Pad to the end as required
+        let mut end = vec![pad; timeline.len - start - val_len];
+        data.append(&mut end);
+        // ... and out
+        TimeSeries::new_unchecked(timeline, data)
+    }
+
+    // endregion constructors
+
+    // region: shift
 
     /// Shift the TimeSeries by a fixed duration. Intened to use values in
     /// different periods e.g. operate on value from 6 months ago.
@@ -156,7 +187,7 @@ where
         Ok(ts)
     }
 
-    // endregion constructors
+    // endregion shift
 
     // region: getters
     /// Return timeseries value at date
@@ -674,6 +705,34 @@ mod tests {
         if let Err(e) = ts3 {
             assert_eq!(e, TimeSeriesError::TimelineDoesNotMatchValues);
         }
+    }
+
+    #[test]
+    fn create_partial_timeseries() {
+        let from = Date::from_calendar_date(2022, Month::January, 1).unwrap();
+        let dur = Duration::new(0, 0, 1);
+        let dr = DateRange::from_duration(from, dur).unwrap();
+        let tl = Timeline::new(dr, Period::Month);
+
+        // Begining
+        let mut v = vec![1, 2, 3, 4];
+        let mut ts = TimeSeries::new_partial(&tl, 0, v, 0);
+        assert_eq!(ts.values, vec![1, 2, 3, 4, 0, 0, 0, 0, 0, 0, 0, 0]);
+
+        // Middle
+        v = vec![1, 2, 3, 4];
+        ts = TimeSeries::new_partial(&tl, 3, v, 0);
+        assert_eq!(ts.values, vec![0, 0, 0, 1, 2, 3, 4, 0, 0, 0, 0, 0]);
+
+        // Part-overflow at end
+        v = vec![1, 2, 3, 4];
+        ts = TimeSeries::new_partial(&tl, 10, v, 0);
+        assert_eq!(ts.values, vec![0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2]);
+
+        // Total Overflow
+        v = vec![1, 2, 3, 4];
+        ts = TimeSeries::new_partial(&tl, 12, v, 0);
+        assert_eq!(ts.values, vec![0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
     }
 
     #[test]
