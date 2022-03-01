@@ -44,3 +44,23 @@ impl fmt::Display for TimeSeriesError {
 }
 
 impl std::error::Error for TimeSeriesError {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn print_em_out() {
+        eprintln!("{}", TimeSeriesError::TimelinesDoNotMatch);
+        eprintln!("{}", TimeSeriesError::PeriodicityDoesNotMatch);
+        eprintln!("{}", TimeSeriesError::TimelineDoesNotMatchValues);
+        eprintln!("{}", TimeSeriesError::BadShift(Period::Day));
+        eprintln!("{}", TimeSeriesError::BadShift(Period::Week));
+        eprintln!("{}", TimeSeriesError::BadShift(Period::Month));
+        eprintln!("{}", TimeSeriesError::BadShift(Period::Quarter));
+        eprintln!("{}", TimeSeriesError::BadShift(Period::Year));
+        eprintln!("{}", TimeSeriesError::TimeDurationTooLarge);
+        eprintln!("{}", TimeSeriesError::DateOutOfRange);
+        eprintln!("{}", TimeSeriesError::AggregationTypeNotImplemented);
+    }
+}
