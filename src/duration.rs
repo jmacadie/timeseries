@@ -286,12 +286,7 @@ impl Duration {
     /// Durations
     fn add_int(dur: Duration, date: Date) -> Result<DateArithmeticOutput, TimeSeriesError> {
         // Add days first for negative durations & last for positive
-        let days_first: bool;
-        if dur.forwards() {
-            days_first = false;
-        } else {
-            days_first = true;
-        }
+        let days_first = !dur.forwards();
 
         let mut output = dur.add_once(date, days_first, true)?;
 
@@ -403,7 +398,7 @@ impl Duration {
                 if !first_pass {
                     // If all else fails then take the day at the end of the month being tried
                     let d = Date::from_calendar_date(year, month, days_in_year_month(year, month))
-                        .map_err(|_| TimeSeriesError::DateOutOfRange)?;
+                        .unwrap_or(date);
                     return Ok(DateArithmeticOutput::new(d));
                 }
                 return self.add_once(date, !days_first, false);

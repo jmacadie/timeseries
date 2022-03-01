@@ -127,21 +127,11 @@ impl Iterator for Timeline {
         let mut next_date = self.current_date;
         match self.periodicity {
             Period::Day => {
-                next_date = match next_date.next_day() {
-                    Some(d) => d,
-                    None => {
-                        return None;
-                    }
-                }
+                next_date = next_date.next_day()?;
             }
             Period::Week => {
                 for _ in 0..7 {
-                    next_date = match next_date.next_day() {
-                        Some(d) => d,
-                        None => {
-                            return None;
-                        }
-                    }
+                    next_date = next_date.next_day()?;
                 }
             }
             Period::Month => {
@@ -151,12 +141,7 @@ impl Iterator for Timeline {
                     y += 1
                 };
                 d = cmp::min(days_in_year_month(y, m), d);
-                next_date = match Date::from_calendar_date(y, m, d) {
-                    Ok(d) => d,
-                    Err(_) => {
-                        return None;
-                    }
-                }
+                next_date = Date::from_calendar_date(y, m, d).ok()?;
             }
             Period::Quarter => {
                 let (mut y, mut m, mut d) = next_date.to_calendar_date();
@@ -167,21 +152,11 @@ impl Iterator for Timeline {
                     };
                 }
                 d = cmp::min(days_in_year_month(y, m), d);
-                next_date = match Date::from_calendar_date(y, m, d) {
-                    Ok(d) => d,
-                    Err(_) => {
-                        return None;
-                    }
-                }
+                next_date = Date::from_calendar_date(y, m, d).ok()?;
             }
             Period::Year => {
                 let (y, m, d) = next_date.to_calendar_date();
-                next_date = match Date::from_calendar_date(y + 1, m, d) {
-                    Ok(d) => d,
-                    Err(_) => {
-                        return None;
-                    }
-                }
+                next_date = Date::from_calendar_date(y + 1, m, d).ok()?;
             }
         }
 

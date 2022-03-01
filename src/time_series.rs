@@ -168,20 +168,13 @@ where
         };
         let mut data = Vec::with_capacity(self.values.len());
         let data_range = self.values.len() - shift_len;
+        let mut pad = vec![pad; shift_len];
         if shift.forwards() {
-            for i in shift_len..self.values.len() {
-                data.push(self.values[i].clone());
-            }
-            for _ in 0..shift_len {
-                data.push(pad.clone());
-            }
+            data.extend_from_slice(&self.values[shift_len..]);
+            data.append(&mut pad);
         } else {
-            for _ in 0..shift_len {
-                data.push(pad.clone());
-            }
-            for i in 0..data_range {
-                data.push(self.values[i].clone());
-            }
+            data.append(&mut pad);
+            data.extend_from_slice(&self.values[..data_range]);
         }
         let ts = Self::new(self.timeline, data)?;
         Ok(ts)
@@ -243,7 +236,6 @@ impl<'a> TimeSeries<'a, f64> {
         let mut target_day = target_iter.next().unwrap_or(target_timeline.range).to;
         let mut data: Vec<f64> = Vec::with_capacity(target_timeline.len);
         let mut val = 0.0; // Initialising to avoid a compiler warning but not actually needed
-        let mut res;
         let mut start_period = true;
 
         //  loop through every source period
@@ -270,7 +262,7 @@ impl<'a> TimeSeries<'a, f64> {
                 // allocate part of the source to the target period and the rest to the
                 // next target period
                 // split done by day count
-                res = source_val
+                let res = source_val
                     * f64::from(DateRange::new(source_range.from, target_day).as_days())
                     / f64::from(source_range.as_days());
                 val += res;
@@ -293,11 +285,7 @@ impl<'a> TimeSeries<'a, f64> {
     fn add_down(&self, target_timeline: &'a Timeline) -> Self {
         let source_iter = *self.timeline;
         let mut target_iter = *target_timeline;
-        let mut source_day: Date;
-        let mut target_day: Date;
         let mut data: Vec<f64> = Vec::with_capacity(target_timeline.len);
-        let mut vals: Vec<f64>;
-        let mut i: usize;
 
         // TODO: this doesn't mirror the add-up method in that it does whole period allocations
         // when working with years/quarters/months into weeks the target periods won't always
@@ -305,16 +293,16 @@ impl<'a> TimeSeries<'a, f64> {
         //  loop through every source period
         for (source_range, source_val) in source_iter.zip(self.values.iter()) {
             // Count through the target ranges until we have spanned the current source range
-            i = 0;
-            source_day = source_range.to;
+            let mut i = 0;
+            let source_day = source_range.to;
             loop {
                 i += 1;
-                target_day = target_iter.next().unwrap_or(target_timeline.range).to;
+                let target_day = target_iter.next().unwrap_or(target_timeline.range).to;
                 if target_day >= source_day {
                     break;
                 }
             }
-            vals = vec![source_val / i as f64; i];
+            let mut vals = vec![source_val / i as f64; i];
             data.append(&mut vals);
         }
         TimeSeries::new_unchecked(target_timeline, data)
@@ -849,6 +837,41 @@ mod tests {
         let ts1 = TimeSeries::new(&tl, v1).unwrap();
 
         assert_eq!(ts1.cast_i32().values, vec![1, 1, 0, 1]);
+    }
+
+    #[test]
+    fn change_periodicity_error() {
+        // Create a date range
+        let from = Date::from_calendar_date(2022, Month::January, 1).unwrap();
+        let dur = Duration::new(0, 0, 2);
+        let dr = DateRange::from_duration(from, dur).unwrap();
+
+        // Create a timeseries
+        let tl1 = Timeline::new(dr, Period::Quarter);
+        let v = vec![1, 2, 3, 4, 5, 6, 7, 8];
+        let ts1 = TimeSeries::new(&tl1, v).unwrap().cast_f64();
+
+        // Create a differnt daterange
+        let dr2 = DateRange::new(from, dr.last_day());
+        let tl2 = Timeline::new(dr2, Period::Month);
+
+        // Test a different date range errors
+        let mut tse = ts1.change_periodicity(&tl2, AggType::Add);
+        assert!(tse.is_err());
+
+        // Test same timeline just clones
+        let tl3 = Timeline::new(dr, Period::Quarter);
+        let mut ts4 = ts1.change_periodicity(&tl3, AggType::Add).unwrap();
+        assert_eq!(ts4.values, ts1.values);
+        ts4.update((from, 100.0));
+        assert_ne!(ts4.values, ts1.values);
+
+        // Test with not implemented aggreation types
+        let tl4 = Timeline::new(dr, Period::Month);
+        tse = ts1.change_periodicity(&tl4, AggType::Mean);
+        assert!(tse.is_err());
+        tse = ts1.change_periodicity(&tl4, AggType::Linear);
+        assert!(tse.is_err());
     }
 
     #[test]
