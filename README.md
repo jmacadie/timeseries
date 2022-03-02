@@ -27,6 +27,7 @@ However, all is not sweetness & light in the garden of Excel financial models, o
 * Source control - all Excel models I've ever seen rely on file management to control versioning, which means having a version number in the file name and storing old versions of the file in some sort of archive folder. Also Excel models don't work with git (or other versioning software) so unless you invest in [onerous stand-alone options](https://www.operis.com/excel-add-ins/) (& use them!) you never really know what's changed in any two Excel file versions
 * Testing - you can do this in Excel and every authority in this domain I know says it's really important but the honest truth is that most Excel models aren't tested that well. Things like test suites and code coverage tools would be very useful to address this deficiency
 * Speed - I know, I listed this as an upside, but if pushed hard enough Excel can get slow enough to be a problem. Coding in Rust should give us a head start on these sorts of issues
+* Data size - it's reasonably well known that Excel suffers if you try to use it with too much data. These issues ought to be more easily dealt with in code, not given that much thought to this as yet
 * Deploying solutions - If you've built a calculation engine it might be nice to deploy it somewhere so it can form part of an automated calculation pipeline, or spun up in many worker nodes to parallelise some calculation workload. This *can* be done with Excel but trust me it's a hassle
 * Corruption - Excel files corrupt. You'll be working on a key file and then one day it's like "Nope ... just, nope". You better pray you have a recent uncorrupted version of the file knocking around because you're not using your head file again
 * Code / algorithm re-use - I must have built about a million (counting is a modeller's specialist skillset) accounting corkscrews in Excel. In a coded language it should be possible to build a library version of these things and then use re-use the library version. Rust's use of generics and traits should be particularly useful for implementing this
@@ -42,16 +43,172 @@ The one crate I do build on pretty extensively is [Time](https://crates.io/crate
 
 ## How to Use
 
+### Duration
+
 ```rust
-// Create a timeline
+use time::{Date, Month};
+
+// Durations can be created directly ...
+let mut dur = Duration::new(1, 2, 3); // 3 years, 2 months and 1 day
+
+// ... from a pair of dates ...
+let d1 = Date::from_calendar_date(2022, Month::January, 1).unwrap();
+let d2 = Date::from_calendar_date(2025, Month::March, 2).unwrap();
+dur = Duration::from_dates(d1, d2); // 3 years, 2 months and 1 day
+
+// ... or from a time::Duration
+let td = time::Duration::weeks(2);
+dur = Duration::from_time_duration(td).unwrap(); // 14 days
+
+// The days, months and years part can be extracted
+assert_eq!(dur.days(), 14);
+assert_eq!(dur.months(), 0);
+assert_eq!(dur.years(), 0);
+
+// The parts can overflow ...
+dur = Duration::new(400, 0, 0);
+assert_eq!(dur.days(), 400);
+assert_eq!(dur.months(), 0);
+assert_eq!(dur.years(), 0);
+
+// ... use normalise() to, well, normalise them
+// has to be done from a reference date though
+let norm = dur.normalise(d1).unwrap();
+assert_eq!(norm.days(), 4);
+assert_eq!(norm.months(), 1);
+assert_eq!(norm.years(), 1);
+
+// Durations go both forwards in time & backwards, use invert to flip the sign
+let back = norm.invert();
+assert_eq!(back.days(), -4);
+assert_eq!(back.months(), -1);
+assert_eq!(back.years(), -1);
+
+// Use forwards to test the direction
+assert!(norm.forwards());
+assert!(!back.forwards());
+
+// Durations can be added to Dates
+// The operation can fail (in edge cases with massive dates), which sadly hurts the ergonomics
+// Also can potentially return multiple results, use primary() to access the most likely
+let mut d3 = (d1 + norm).unwrap().primary();
+assert_eq!((d3.year(), d3.month() as u8, d3.day()), (2023, 2, 5));
+d3 = (d1 + dur).unwrap().primary();
+assert_eq!((d3.year(), d3.month() as u8, d3.day()), (2023, 2, 5));
+
+// Addition (and subtraction) can result in multiple values
+let d3 = Date::from_calendar_date(2022, Month::February, 28).unwrap();
+dur = Duration::new(0, 1, 0); // 1 month
+let dao = (d3 + dur).unwrap();
+assert!(dao.contains(Date::from_calendar_date(2022, Month::March, 28).unwrap()));
+assert!(dao.contains(Date::from_calendar_date(2022, Month::March, 29).unwrap()));
+assert!(dao.contains(Date::from_calendar_date(2022, Month::March, 30).unwrap()));
+assert!(dao.contains(Date::from_calendar_date(2022, Month::March, 28).unwrap()));
+assert!(!dao.contains(Date::from_calendar_date(2022, Month::March, 27).unwrap()));
+assert!(!dao.contains(Date::from_calendar_date(2022, Month::April, 1).unwrap()));
+```
+
+### Date Range
+```rust
+use time::{Date, Month};
+
+// Is just a span between two dates
+let d1 = Date::from_calendar_date(2022, Month::January, 1).unwrap();
+let d2 = Date::from_calendar_date(2025, Month::March, 2).unwrap();
+let dr1 = DateRange::new(d1, d2);
+
+// Can be created from a date and a duration as well
+let d3 = Date::from_calendar_date(2021, Month::August, 15).unwrap();
+let dur = Duration::new(0, 0, 1); // 1 year
+let dr2 = DateRange::from_duration(d3, dur).unwrap();
+
+// Can be converted back into a duration
+assert_eq!(dr2.as_duration(), dur);
+
+// Can also be converted into days, weeks, months, quarters & years
+// Parameter is whther to count the part period at the end or not
+assert_eq!(dr1.as_days(), 1_156);
+assert_eq!(dr1.as_weeks(false), 165);
+assert_eq!(dr1.as_weeks(true), 166);
+assert_eq!(dr1.as_months(false), 38);
+assert_eq!(dr1.as_months(true), 39);
+assert_eq!(dr1.as_quarters(false), 12);
+assert_eq!(dr1.as_quarters(true), 13);
+assert_eq!(dr1.as_years(false), 3);
+assert_eq!(dr1.as_years(true), 4);
+
+// Can intersect or union two date ranges
+let mut dr3 = dr1.intersect(&dr2).unwrap();
+assert_eq!(dr3.as_days(), 226);
+dr3 = dr1.union(&dr2);
+assert_eq!(dr3.as_days(), 1_295);
+
+// Can also test if a date is within the range
+let d4 = Date::from_calendar_date(2023, Month::July, 30).unwrap();
+assert!(dr1.contains(d4));
+assert!(!dr2.contains(d4));
+```
+
+### Timeline
+```rust
+use time::{Date, Month};
+
+// Is a date range with periodicty
 let from = Date::from_calendar_date(2022, Month::January, 1).unwrap();
-let dur = Duration::new(0, 0, 2); // days, months, years
+let dur = Duration::new(0, 0, 10);
+let dr = DateRange::from_duration(from, dur).unwrap();
+let tlm = Timeline::new(dr, Period::Month); // Monthly timeline over 10 years
+
+// You can change periodicity
+let tld = tlm.change_periodicity(Period::Day);
+let tlw = tlm.change_periodicity(Period::Week);
+let tlq = tlm.change_periodicity(Period::Quarter);
+let tly = tlm.change_periodicity(Period::Year);
+
+// You can get the length of the timeline
+assert_eq!(tld.len, 3_652);
+assert_eq!(tlw.len, 522); // actually 521 weeks and 5 days, but the short period counts
+assert_eq!(tlm.len, 120);
+assert_eq!(tlq.len, 40);
+assert_eq!(tly.len, 10);
+
+// You can find the index at a given date
+let d = Date::from_calendar_date(2025, Month::July, 6).unwrap();
+assert_eq!(tld.index_at(d).unwrap(), 1_282);
+assert_eq!(tlw.index_at(d).unwrap(), 183);
+assert_eq!(tlm.index_at(d).unwrap(), 42);
+assert_eq!(tlq.index_at(d).unwrap(), 14);
+assert_eq!(tly.index_at(d).unwrap(), 3);
+
+// Or you can pull out a date range that covers the index
+let mut dr2 = tly.index(3).unwrap();
+let mut d = dr2.from();
+assert_eq!((d.year(), d.month() as u8, d.day()), (2025, 1, 1));
+d = dr2.to();
+assert_eq!((d.year(), d.month() as u8, d.day()), (2026, 1, 1));
+
+// you can even index in from the end
+dr2 = tlw.index(-5).unwrap();
+d = dr2.from();
+assert_eq!((d.year(), d.month() as u8, d.day()), (2031, 11, 29));
+d = dr2.to();
+assert_eq!((d.year(), d.month() as u8, d.day()), (2031, 12, 6));
+```
+
+### Time Series
+
+```rust
+use time::{Date, Month};
+
+// Finally, a time series is a timeline with a matching vector of values
+let from = Date::from_calendar_date(2022, Month::January, 1).unwrap();
+let dur = Duration::new(0, 0, 2); // 0 days, 0 months, 2 years i.e. 2 years
 let dr = DateRange::from_duration(from, dur).unwrap();
 let tl = Timeline::new(dr, Period::Quarter);
-
-// Create two timeseries
 let v1 = vec![1, 2, 3, 4, 5, 6, 7, 8];
 let ts1 = TimeSeries::new(&tl, v1).unwrap();
+
+// Create another timeseries
 let v2 = vec![5, 6, 7, 8, -10, 0, -11, 0];
 let ts2 = TimeSeries::new(&tl, v2).unwrap();
 
@@ -64,12 +221,18 @@ let op = |(&a, &b): (&i32, &i32)| -> i32 {
     }
 };
 let ts3 = ts1.apply(&ts2, op).unwrap();
-assert_eq!(ts3.values, vec![1, 1, 8, 9, -9, 1, -10, 1]);
+assert_eq!(
+    ts3.value_range(dr).unwrap(),
+    &vec![1, 1, 8, 9, -9, 1, -10, 1][..]
+);
 
 // Apply a shift
-let shift = Duration::new(0, -9, 0); // days, months, years
+let shift = Duration::new(0, -9, 0); // 0 days, -9 months, 0 years i.e. 9 months ago
 let ts4 = ts3.shift(shift, 0).unwrap();
-assert_eq!(ts4.values, vec![0, 0, 0, 1, 1, 8, 9, -9]);
+assert_eq!(
+    ts4.value_range(dr).unwrap(),
+    &vec![0, 0, 0, 1, 1, 8, 9, -9][..]
+);
 ```
 
 To be extensively expanded upon...

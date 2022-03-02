@@ -195,7 +195,7 @@ where
     /// timeline of the `TimeSeries` or rhis will return `None`
     pub fn value_range(&self, dr: DateRange) -> Option<&[T]> {
         let start = self.timeline.index_at(dr.from())? as usize;
-        let end = self.timeline.index_at(dr.to())? as usize;
+        let end = self.timeline.index_at(dr.last_day())? as usize;
         self.values.get(start..=end)
     }
     // endregion getters
@@ -367,9 +367,8 @@ where
     pub fn cast_f64(&self) -> TimeSeries<'a, f64> {
         let mut data = Vec::with_capacity(self.values.len());
         for val in self.values.iter() {
-            let v1 = *val;
-            let v = v1.into();
-            data.push(v);
+            let v = *val;
+            data.push(v.into());
         }
         TimeSeries::new_unchecked(self.timeline, data)
     }
@@ -382,9 +381,8 @@ where
     pub fn cast_i32(&self) -> TimeSeries<'a, i32> {
         let mut data = Vec::with_capacity(self.values.len());
         for val in self.values.iter() {
-            let v1 = *val;
-            let v = v1.into();
-            data.push(v);
+            let v = *val;
+            data.push(v.into());
         }
         TimeSeries::new_unchecked(self.timeline, data)
     }
@@ -432,7 +430,7 @@ impl<'a, T> TimeSeries<'a, T> {
     /// ---
     /// ### Example
     /// ```
-    /// use timeseries::{TimeSeries, Timeline, DateRange, Period};
+    /// use timeseries::{TimeSeries, Timeline, DateRange, Period, Duration};
     /// use time::{Date, Month};
     ///
     /// // Create a timeline
@@ -456,6 +454,8 @@ impl<'a, T> TimeSeries<'a, T> {
     ///     }
     /// };
     /// let ts3 = ts1.apply(&ts2, op).unwrap();
+    /// assert_eq!(ts3.value_range(dr).unwrap(), &vec![1, 1, 8, 9][..]);
+    ///
     /// ```
     pub fn apply<F>(
         &self,
@@ -473,6 +473,70 @@ impl<'a, T> TimeSeries<'a, T> {
             .values
             .iter()
             .zip(other.values.iter())
+            .map(func)
+            .collect();
+        let ts = TimeSeries::new(self.timeline, data)?;
+        Ok(ts)
+    }
+
+    /// Allows the user to provide a closure that defines the pairwise combination
+    /// of two time series, plus their timeline
+    ///
+    /// The closure cannot have side effects (i.e. change the inputs provided). This
+    /// is to ensure that the `TimeSeries` being operated on, don't change in the process
+    /// of generating a new `TimeSeries`
+    ///
+    /// ---
+    /// ### Example
+    /// ```
+    /// use timeseries::{TimeSeries, Timeline, DateRange, Period, Duration};
+    /// use time::{Date, Month};
+    ///
+    /// // Create a timeline
+    /// let from = Date::from_calendar_date(2022, Month::January, 1).unwrap();
+    /// let dur = Duration::new(0, 0, 2);
+    /// let dr = DateRange::from_duration(from, dur).unwrap();
+    /// let tl = Timeline::new(dr, Period::Quarter);
+    ///
+    /// // Create two timeseries
+    /// let v1 = vec![1, 2, 3, 4, 1, 2, 3, 4];
+    /// let ts1 = TimeSeries::new(&tl, v1).unwrap();
+    /// let v2 = vec![5, 6, 7, 8, 9, 10, 11, 12];
+    /// let ts2 = TimeSeries::new(&tl, v2).unwrap();
+    ///
+    /// // Create a date
+    /// let date = (from + Duration::new(0, 4, 1)).unwrap().primary();
+    /// // Write a generic function that can be pairwise applied to the elements of a TS and check OK
+    /// let op = |(t, &a, &b): (DateRange, &i32, &i32)| -> i32 {
+    ///     if t.contains(date) {
+    ///         1000
+    ///     } else if a < 3 {
+    ///         1
+    ///     } else {
+    ///         b + 1
+    ///     }
+    /// };
+    /// let ts3 = ts1.apply_with_time(&ts2, op).unwrap();
+    /// assert_eq!(ts3.value_range(dr).unwrap(), &vec![1, 1, 8, 9, 1, 1000, 12, 13][..]);
+    ///
+    /// ```
+    pub fn apply_with_time<F>(
+        &self,
+        other: &TimeSeries<'a, T>,
+        func: F,
+    ) -> Result<TimeSeries<'a, T>, TimeSeriesError>
+    where
+        F: FnMut((DateRange, &T, &T)) -> T,
+        T: Copy,
+    {
+        if self.timeline != other.timeline {
+            return Err(TimeSeriesError::TimelinesDoNotMatch);
+        }
+        let tl = *self.timeline;
+        let data = tl
+            .zip(self.values.iter())
+            .zip(other.values.iter())
+            .map(|((a, b), c)| (a, b, c))
             .map(func)
             .collect();
         let ts = TimeSeries::new(self.timeline, data)?;
@@ -820,7 +884,7 @@ mod tests {
 
         // Check out of bounds
         d1 = Date::from_calendar_date(2022, Month::August, 10).unwrap();
-        d2 = to;
+        d2 = to.next_day().unwrap();
         dr1 = DateRange::new(d1, d2);
         assert!(ts.value_range(dr1).is_none());
 
@@ -1452,7 +1516,7 @@ mod tests {
     }
 
     #[test]
-    fn gen_func_timeseries() {
+    fn apply() {
         // Create a timeline
         let from = Date::from_calendar_date(2022, Month::January, 10).unwrap();
         let to = Date::from_calendar_date(2023, Month::January, 10).unwrap();
@@ -1518,6 +1582,47 @@ mod tests {
         assert!(ts12.is_ok());
         let ts12 = ts12.unwrap();
         assert_eq!(ts12.values, vec![1.0, 1.0, 1.0, 0.5]);
+    }
+
+    #[test]
+    fn apply_with_time() {
+        // Create a timeline
+        let from = Date::from_calendar_date(2022, Month::January, 1).unwrap();
+        let dur = Duration::new(0, 0, 2);
+        let dr = DateRange::from_duration(from, dur).unwrap();
+        let tl = Timeline::new(dr, Period::Quarter);
+
+        // Create two timeseries
+        let v1 = vec![1, 2, 3, 4, 1, 2, 3, 4];
+        let ts1 = TimeSeries::new(&tl, v1).unwrap();
+        let v2 = vec![5, 6, 7, 8, 9, 10, 11, 12];
+        let ts2 = TimeSeries::new(&tl, v2).unwrap();
+
+        // Create a date
+        let date = (from + Duration::new(0, 4, 1)).unwrap().primary();
+        // Write a generic function that can be pairwise applied to the elements of a TS and check OK
+        let op = |(t, &a, &b): (DateRange, &i32, &i32)| -> i32 {
+            if t.contains(date) {
+                1000
+            } else if a < 3 {
+                1
+            } else {
+                b + 1
+            }
+        };
+        let ts3 = ts1.apply_with_time(&ts2, op);
+        assert!(ts3.is_ok());
+
+        // Check values in added TS
+        let ts3 = ts3.unwrap();
+        assert_eq!(ts3.values, vec![1, 1, 8, 9, 1, 1000, 12, 13]);
+
+        // Check adding TS with different timeline is not OK
+        let tl2 = Timeline::new(dr, Period::Year);
+        let v4 = vec![1, 2];
+        let ts4 = TimeSeries::new(&tl2, v4).unwrap();
+        let ts5 = ts4.apply_with_time(&ts1, op);
+        assert!(ts5.is_err());
     }
 
     #[test]
