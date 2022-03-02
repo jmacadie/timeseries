@@ -285,25 +285,46 @@ impl<'a> TimeSeries<'a, f64> {
     fn add_down(&self, target_timeline: &'a Timeline) -> Self {
         let source_iter = *self.timeline;
         let mut target_iter = *target_timeline;
+        let mut target_day = target_iter.range.from();
         let mut data: Vec<f64> = Vec::with_capacity(target_timeline.len);
+        let mut res_end = 0.0;
+        let mut res_start = 0.0;
+        let mut part_end = false;
+        let mut part_start = false;
+        let mut val_end = 0.0;
 
-        // TODO: this doesn't mirror the add-up method in that it does whole period allocations
-        // when working with years/quarters/months into weeks the target periods won't always
-        // line up with the source periods, so values should be spilt across them proportionately
-        //  loop through every source period
+        // TODO: This still treats the final target period as fully fitting within the source period
+        // Only affects weeks but there's the possibility that the final period is a wekk of only 2
+        // days and ideally this period would only hold 2/7 of the value from the period that preceeds it
         for (source_range, source_val) in source_iter.zip(self.values.iter()) {
             // Count through the target ranges until we have spanned the current source range
             let mut i = 0;
             let source_day = source_range.to;
-            loop {
-                i += 1;
-                let target_day = target_iter.next().unwrap_or(target_timeline.range).to;
-                if target_day >= source_day {
-                    break;
+            while target_day < source_day {
+                let target_range = target_iter.next().unwrap_or(target_timeline.range);
+                target_day = target_range.to;
+                if target_day <= source_day {
+                    i += 1;
+                } else {
+                    res_end = match target_range.intersect(&source_range) {
+                        Some(r) => f64::from(r.as_days()) / f64::from(target_range.as_days()),
+                        None => 0.0,
+                    };
+                    part_end = true;
                 }
             }
-            let mut vals = vec![source_val / i as f64; i];
+            let val = source_val / (i as f64 + res_start + res_end);
+            if part_start {
+                data.push(val_end + val * res_start);
+            }
+            let mut vals = vec![val; i];
             data.append(&mut vals);
+            part_start = part_end;
+            if part_end {
+                val_end = val * res_end;
+                res_start = 1.0 - res_end;
+                res_end = 0.0;
+            }
         }
         TimeSeries::new_unchecked(target_timeline, data)
     }
@@ -1049,10 +1070,11 @@ mod tests {
 
         // Test years to weeks
         ts2 = ts1.change_periodicity(&tlw, AggType::Add).unwrap();
-        assert!((ts2.values[0] - 0.018867924528).abs() < 1e-10);
-        assert!((ts2.values[52] - 0.018867924528).abs() < 1e-10);
-        assert!((ts2.values[53] - 0.038461538462).abs() < 1e-10);
-        assert!((ts2.values[104] - 0.038461538462).abs() < 1e-10);
+        assert!((ts2.values[0] - 0.019178082192).abs() < 1e-10);
+        assert!((ts2.values[51] - 0.019178082192).abs() < 1e-10);
+        assert!((ts2.values[52] - 0.035172158460).abs() < 1e-10);
+        assert!((ts2.values[53] - 0.037837837838).abs() < 1e-10);
+        assert!((ts2.values[104] - 0.037837837838).abs() < 1e-10);
 
         // Test years to days
         ts2 = ts1.change_periodicity(&tld, AggType::Add).unwrap();
