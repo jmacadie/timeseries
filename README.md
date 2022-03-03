@@ -208,11 +208,79 @@ let tl = Timeline::new(dr, Period::Quarter);
 let v1 = vec![1, 2, 3, 4, 5, 6, 7, 8];
 let ts1 = TimeSeries::new(&tl, v1).unwrap();
 
-// Create another timeseries
-let v2 = vec![5, 6, 7, 8, -10, 0, -11, 0];
-let ts2 = TimeSeries::new(&tl, v2).unwrap();
+// The length of the timeline and the values must match
+let v2 = vec![1, 2, 3, 4, 5, 6, 7];
+assert!(TimeSeries::new(&tl, v2.clone()).is_err());
 
-// Write a generic function that can be pairwise applied to the elements of a TS and check OK
+// You can extract values from a TS, either at a date ...
+let d = Date::from_calendar_date(2022, Month::December, 13).unwrap();
+assert_eq!(ts1.value(d), Some(&4));
+
+// ...or a slice reference over a date range
+let d = Date::from_calendar_date(2022, Month::April, 1).unwrap();
+let slice_dur = Duration::new(0, 9, 0);
+let slice_dr = DateRange::from_duration(d, slice_dur).unwrap();
+assert_eq!(ts1.value_range(slice_dr).unwrap(), vec![2, 3, 4]);
+
+// You can create a time series from a partial specification
+let mut ts3 = TimeSeries::new_partial(&tl, 0, v2.clone(), 0);
+assert_eq!(ts3.value_range(dr).unwrap(), vec![1, 2, 3, 4, 5, 6, 7, 0]);
+
+// Partial creation will truncate overflowing values on the RHS as required
+ts3 = TimeSeries::new_partial(&tl, 3, v2, 0);
+assert_eq!(ts3.value_range(dr).unwrap(), vec![0, 0, 0, 1, 2, 3, 4, 5]);
+
+// You can shift a time series, in both directions
+let shift = Duration::new(0, 15, 0);
+let mut ts4 = ts1.shift(shift, 0).unwrap();
+assert_eq!(ts4.value_range(dr).unwrap(), vec![6, 7, 8, 0, 0, 0, 0, 0]);
+ts4 = ts1.shift(shift.invert(), 0).unwrap();
+assert_eq!(ts4.value_range(dr).unwrap(), vec![0, 0, 0, 0, 0, 1, 2, 3]);
+
+// You can cast the underlying values to float and int, where datatypes allow
+let ts5 = ts1.cast_f64();
+assert_eq!(
+    ts5.value_range(dr).unwrap(),
+    vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
+);
+// This is still tbd as you can't get from f64 to i32 without making some lossy adjustments
+//let ts6 = ts5.cast_i32();
+//assert_eq!(ts6.value_range(dr).unwrap(), vec![1, 2, 3, 4, 5, 6, 7, 8]);
+
+// You can update values of a TimeSeries in place
+// Either with a straight replacement or you can add
+ts3.update((d, 100));
+assert_eq!(ts3.value_range(dr).unwrap(), vec![0, 100, 0, 1, 2, 3, 4, 5]);
+ts3.update_add((d, 200));
+assert_eq!(ts3.value_range(dr).unwrap(), vec![0, 300, 0, 1, 2, 3, 4, 5]);
+
+// You can change the periodicity of a TimeSeries
+// N.B. only works with f64 currently as you might need to split a period
+let tly = Timeline::new(dr, Period::Year);
+let ts6 = ts5.change_periodicity(&tly, AggType::Add).unwrap();
+assert_eq!(ts6.value_range(dr).unwrap(), vec![10.0, 26.0]);
+
+// All of which is pre-amble to the real purpose of Time Series obejcts which is to combine them
+// Pair-wise combination is assumed
+
+// Standard primitive operators work
+let mut ts7 = (&ts1 + &ts3).unwrap();
+assert_eq!(
+    ts7.value_range(dr).unwrap(),
+    vec![1, 302, 3, 5, 7, 9, 11, 13]
+);
+ts7 = (&ts1 - &ts3).unwrap();
+assert_eq!(
+    ts7.value_range(dr).unwrap(),
+    vec![1, -298, 3, 3, 3, 3, 3, 3]
+);
+ts7 = (&ts1 * &ts3).unwrap();
+assert_eq!(
+    ts7.value_range(dr).unwrap(),
+    vec![0, 600, 0, 4, 10, 18, 28, 40]
+);
+
+// We can also Write a generic function that can be pairwise applied to the elements of a TS
 let op = |(&a, &b): (&i32, &i32)| -> i32 {
     if a < 3 {
         1
@@ -220,22 +288,26 @@ let op = |(&a, &b): (&i32, &i32)| -> i32 {
         b + 1
     }
 };
-let ts3 = ts1.apply(&ts2, op).unwrap();
-assert_eq!(
-    ts3.value_range(dr).unwrap(),
-    &vec![1, 1, 8, 9, -9, 1, -10, 1][..]
-);
+ts7 = ts1.apply(&ts3, op).unwrap();
+assert_eq!(ts7.value_range(dr).unwrap(), vec![1, 1, 1, 2, 3, 4, 5, 6]);
 
-// Apply a shift
-let shift = Duration::new(0, -9, 0); // 0 days, -9 months, 0 years i.e. 9 months ago
-let ts4 = ts3.shift(shift, 0).unwrap();
+// and we can pull the same trick, but additionally with reference to the timeline
+let date = Date::from_calendar_date(2023, Month::April, 1).unwrap();
+let op = |(t, &a, &b): (DateRange, &i32, &i32)| -> i32 {
+    if t.contains(date) {
+        1000
+    } else if a < 3 {
+        1
+    } else {
+        b + 1
+    }
+};
+ts7 = ts1.apply_with_time(&ts3, op).unwrap();
 assert_eq!(
-    ts4.value_range(dr).unwrap(),
-    &vec![0, 0, 0, 1, 1, 8, 9, -9][..]
+    ts7.value_range(dr).unwrap(),
+    vec![1, 1, 1, 2, 3, 1000, 5, 6]
 );
 ```
-
-To be extensively expanded upon...
 
 ## Stuff that needs doing
 

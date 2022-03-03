@@ -23,5 +23,6 @@ pub use crate::date_range::DateRange;
 pub use crate::duration::Duration;
 pub use crate::error::TimeSeriesError;
 pub use crate::period::Period;
+pub use crate::time_series::AggType;
 pub use crate::time_series::TimeSeries;
 pub use crate::timeline::Timeline;

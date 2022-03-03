@@ -454,7 +454,7 @@ impl<'a, T> TimeSeries<'a, T> {
     ///     }
     /// };
     /// let ts3 = ts1.apply(&ts2, op).unwrap();
-    /// assert_eq!(ts3.value_range(dr).unwrap(), &vec![1, 1, 8, 9][..]);
+    /// assert_eq!(ts3.value_range(dr).unwrap(), vec![1, 1, 8, 9]);
     ///
     /// ```
     pub fn apply<F>(
@@ -517,7 +517,7 @@ impl<'a, T> TimeSeries<'a, T> {
     ///     }
     /// };
     /// let ts3 = ts1.apply_with_time(&ts2, op).unwrap();
-    /// assert_eq!(ts3.value_range(dr).unwrap(), &vec![1, 1, 8, 9, 1, 1000, 12, 13][..]);
+    /// assert_eq!(ts3.value_range(dr).unwrap(), vec![1, 1, 8, 9, 1, 1000, 12, 13]);
     ///
     /// ```
     pub fn apply_with_time<F>(
