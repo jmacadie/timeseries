@@ -40,7 +40,7 @@ pub enum AggType {
 /// the addition call
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TimeSeries<'a, T> {
-    pub(crate) timeline: &'a Timeline,
+    timeline: &'a Timeline,
     values: Vec<T>,
 }
 

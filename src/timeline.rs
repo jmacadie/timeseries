@@ -1,4 +1,4 @@
-use crate::{error::TimeSeriesError, DateRange, Duration, Period};
+use crate::{DateRange, Duration, Period};
 use std::cmp;
 use time::{util::days_in_year_month, Date, Month};
 
@@ -19,12 +19,15 @@ use time::{util::days_in_year_month, Date, Month};
 /// three periods will be whole months and the final one will be 2 days
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Timeline {
-    pub range: DateRange,
-    pub periodicity: Period,
-    pub len: usize,
+    pub(crate) range: DateRange,
+    pub(crate) periodicity: Period,
+    pub(crate) len: usize,
 }
 
+#[allow(clippy::len_without_is_empty)]
 impl Timeline {
+    // region: constructors
+    /// Create a new Timeline
     pub fn new(range: DateRange, periodicity: Period) -> Self {
         let len = match periodicity {
             Period::Day => range.as_days() as usize,
@@ -40,10 +43,34 @@ impl Timeline {
         }
     }
 
+    /// Create a new timeline with the same start and end dates
+    /// but with different periodicity
     pub fn change_periodicity(&self, new: Period) -> Self {
         Timeline::new(self.range, new)
     }
+    // endregion constructors
 
+    // region: getters
+    /// Return the Date Range of the Timeline
+    pub fn range(&self) -> DateRange {
+        self.range
+    }
+
+    /// Return the periodicity of the Timeline
+    pub fn periodicity(&self) -> Period {
+        self.periodicity
+    }
+
+    /// Return the length of the Timeline
+    pub fn len(&self) -> usize {
+        self.len
+    }
+    // endregion getters
+
+    // region: indexing
+    /// Return the index position of the date within the
+    /// timeline. Returns None if the date is outside of
+    /// the timeline
     pub fn index_at(&self, date: Date) -> Option<usize> {
         if !self.range.contains(date) {
             return None;
@@ -58,6 +85,9 @@ impl Timeline {
         }
     }
 
+    /// Return the date range that represents a single period at the index.
+    /// Period is defined by the periodicity of the Timeline,
+    /// so a monthly timeline would return a month date range
     pub fn index(&self, mut idx: i32) -> Option<DateRange> {
         let len = i32::try_from(self.len).ok()?;
         if idx >= len || idx < -len {
@@ -95,23 +125,7 @@ impl Timeline {
         end = cmp::min(end, self.range.to);
         Some(DateRange::new(start, end))
     }
-
-    // TODO: write the following:
-    //  * a getter for a time slice (maybe? need to think of the use case)
-
-    // TODO: even needed?
-    pub fn merge(&self, other: Timeline) -> Result<Timeline, TimeSeriesError> {
-        if *self == other {
-            return Ok(*self);
-        }
-        if self.periodicity != other.periodicity {
-            return Err(TimeSeriesError::PeriodicityDoesNotMatch);
-        }
-        Ok(Timeline::new(
-            self.range.union(&other.range),
-            self.periodicity,
-        ))
-    }
+    // endregion indexing
 }
 
 impl IntoIterator for Timeline {
@@ -228,6 +242,29 @@ mod tests {
     }
 
     #[test]
+    fn range() {
+        let d1 = Date::from_calendar_date(2022, Month::January, 15).unwrap();
+        let d2 = Date::from_calendar_date(2024, Month::June, 15).unwrap();
+        let dr = DateRange::new(d1, d2);
+        let tl = Timeline::new(dr, Period::Day);
+
+        let from = tl.range().from;
+        let to = tl.range().to;
+        assert_eq!(from, d1);
+        assert_eq!(to, d2);
+    }
+
+    #[test]
+    fn periodicity() {
+        let d1 = Date::from_calendar_date(2022, Month::January, 15).unwrap();
+        let d2 = Date::from_calendar_date(2024, Month::June, 15).unwrap();
+        let dr = DateRange::new(d1, d2);
+        let tl = Timeline::new(dr, Period::Day);
+
+        assert_eq!(tl.periodicity(), Period::Day);
+    }
+
+    #[test]
     fn index_at() {
         let d1 = Date::from_calendar_date(2022, Month::January, 15).unwrap();
         let d2 = Date::from_calendar_date(2024, Month::June, 15).unwrap();
@@ -324,38 +361,6 @@ mod tests {
             Some(drtemp),
             "Check other day with negative index"
         );
-    }
-
-    #[test]
-    fn merge() {
-        let d1 = Date::from_calendar_date(2022, Month::January, 15).unwrap();
-        let d2 = Date::from_calendar_date(2024, Month::June, 15).unwrap();
-        let dr = DateRange::new(d1, d2);
-        let tl = Timeline::new(dr, Period::Day);
-
-        // Test with clone of the timeline, should be ok and return the same timeline
-        let mut tl2 = tl;
-        let mut tlr = tl.merge(tl2);
-        assert!(tlr.is_ok());
-        let mut tl3 = tlr.unwrap();
-        assert_eq!(tl3.range.from, d1);
-        assert_eq!(tl3.range.to, d2);
-
-        // Test with timeline with different periodicity, should error
-        tl2 = tl.change_periodicity(Period::Month);
-        tlr = tl.merge(tl2);
-        assert!(tlr.is_err());
-
-        // Test timelines that need merging
-        let d3 = Date::from_calendar_date(2023, Month::January, 15).unwrap();
-        let d4 = Date::from_calendar_date(2027, Month::December, 31).unwrap();
-        let dr2 = DateRange::new(d3, d4);
-        tl2 = Timeline::new(dr2, Period::Day);
-        tlr = tl.merge(tl2);
-        assert!(tlr.is_ok());
-        tl3 = tlr.unwrap();
-        assert_eq!(tl3.range.from, d1);
-        assert_eq!(tl3.range.to, d4);
     }
 
     #[test]

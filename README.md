@@ -166,11 +166,11 @@ let tlq = tlm.change_periodicity(Period::Quarter);
 let tly = tlm.change_periodicity(Period::Year);
 
 // You can get the length of the timeline
-assert_eq!(tld.len, 3_652);
-assert_eq!(tlw.len, 522); // actually 521 weeks and 5 days, but the short period counts
-assert_eq!(tlm.len, 120);
-assert_eq!(tlq.len, 40);
-assert_eq!(tly.len, 10);
+assert_eq!(tld.len(), 3_652);
+assert_eq!(tlw.len(), 522); // actually 521 weeks and 5 days, but the short period counts
+assert_eq!(tlm.len(), 120);
+assert_eq!(tlq.len(), 40);
+assert_eq!(tly.len(), 10);
 
 // You can find the index at a given date
 let d = Date::from_calendar_date(2025, Month::July, 6).unwrap();
