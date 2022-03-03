@@ -225,24 +225,36 @@ impl Duration {
     // endregion constructors
 
     // region: getters
+    /// Return the number of days in the Duration.
+    /// Note that this can change after a normalise call
+    /// even though it remains the same Duration
     pub fn days(&self) -> i32 {
         self.days
     }
 
+    /// Return the number of months in the Duration.
+    /// Note that this can change after a normalise call
+    /// even though it remains the same Duration
     pub fn months(&self) -> i32 {
         self.months
     }
 
+    /// Return the number of years in the Duration.
+    /// Note that this can change after a normalise call
+    /// even though it remains the same Duration
     pub fn years(&self) -> i32 {
         self.years
     }
     // endregion getters
 
     // region: utility methods
-    /// Function to convert an overflowing duration created by a new
-    /// call into a normalise days, months and years duration.
+    /// Function to convert an overflowing Duration into a normalised
+    /// days, months and years Duration.
     /// By normalised it is meant that days are in the range 0..32 &
     /// months are in the range  0..13
+    ///
+    /// Will return error in the case where the date plus the duration
+    /// errors
     pub fn normalise(&self, date: Date) -> Result<Self, TimeSeriesError> {
         let to = (date + self)?.primary();
         Ok(Self::from_dates(date, to))

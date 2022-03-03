@@ -247,7 +247,7 @@ fn readme_timeseries() {
     ts7 = ts1.apply(&ts3, op).unwrap();
     assert_eq!(ts7.value_range(dr).unwrap(), vec![1, 1, 1, 2, 3, 4, 5, 6]);
 
-    // and we can pull the same trick but with reference to the timeline
+    // and we can pull the same trick, but additionally with reference to the timeline
     let date = Date::from_calendar_date(2023, Month::April, 1).unwrap();
     let op = |(t, &a, &b): (DateRange, &i32, &i32)| -> i32 {
         if t.contains(date) {
