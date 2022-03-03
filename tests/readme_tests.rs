@@ -263,4 +263,28 @@ fn readme_timeseries() {
         ts7.value_range(dr).unwrap(),
         vec![1, 1, 1, 2, 3, 1000, 5, 6]
     );
+
+    // You can iterate through a TimeSeries
+    // ... which means things like zip, map, fold etc will all work
+    let q = Duration::new(0, 3, 0);
+    for (i, (drp, val)) in ts1.into_iter().enumerate() {
+        match i {
+            0 => {
+                let d = Date::from_calendar_date(2022, Month::January, 1).unwrap();
+                assert_eq!(drp, DateRange::from_duration(d, q).unwrap());
+                assert_eq!(val, &1);
+            }
+            2 => {
+                let d = Date::from_calendar_date(2022, Month::July, 1).unwrap();
+                assert_eq!(drp, DateRange::from_duration(d, q).unwrap());
+                assert_eq!(val, &3);
+            }
+            7 => {
+                let d = Date::from_calendar_date(2023, Month::October, 1).unwrap();
+                assert_eq!(drp, DateRange::from_duration(d, q).unwrap());
+                assert_eq!(val, &8);
+            }
+            _ => {}
+        }
+    }
 }

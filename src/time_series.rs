@@ -735,6 +735,42 @@ where
 // endregion arithmetic_rem
 // endregion arithmetic_ops
 
+// region: iterator
+impl<'a, 'b, T> IntoIterator for &'b TimeSeries<'a, T>
+where
+    T: 'b,
+{
+    type Item = (DateRange, &'b T);
+    type IntoIter = TimeSeriesIterator<'a, 'b, T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        TimeSeriesIterator {
+            timeline: self.timeline,
+            values: &self.values[..],
+            index: 0,
+        }
+    }
+}
+
+pub struct TimeSeriesIterator<'a, 'b, T> {
+    timeline: &'a Timeline,
+    values: &'b [T],
+    index: usize,
+}
+
+impl<'a, 'b, T> Iterator for TimeSeriesIterator<'a, 'b, T> {
+    type Item = (DateRange, &'b T);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let dr = self.timeline.index(self.index as i32)?;
+        let val = self.values.get(self.index)?;
+        self.index += 1;
+        Some((dr, val))
+    }
+}
+
+// endregion iterator
+
 #[cfg(test)]
 mod tests {
 
@@ -2066,5 +2102,64 @@ mod tests {
         assert!(ts12.is_ok());
         let ts12 = ts12.unwrap();
         assert_eq!(ts12.values, vec![4.0, 1000.6, 4.5001, 2.5]);*/
+    }
+
+    #[test]
+    fn iterator() {
+        // Create a quarterly timeseries
+        let from = Date::from_calendar_date(2022, Month::January, 1).unwrap();
+        let dur = Duration::new(0, 0, 2);
+        let dr = DateRange::from_duration(from, dur).unwrap();
+        let tl1 = Timeline::new(dr, Period::Quarter);
+        let v = vec![1, 2, 3, 4, 5, 6, 7, 8];
+        let ts1 = TimeSeries::new(&tl1, v).unwrap();
+
+        // Test a for loop
+        let q = Duration::new(0, 3, 0);
+        for (i, (drp, val)) in ts1.into_iter().enumerate() {
+            match i {
+                0 => {
+                    let d = Date::from_calendar_date(2022, Month::January, 1).unwrap();
+                    assert_eq!(drp, DateRange::from_duration(d, q).unwrap());
+                    assert_eq!(val, &1);
+                }
+                1 => {
+                    let d = Date::from_calendar_date(2022, Month::April, 1).unwrap();
+                    assert_eq!(drp, DateRange::from_duration(d, q).unwrap());
+                    assert_eq!(val, &2);
+                }
+                2 => {
+                    let d = Date::from_calendar_date(2022, Month::July, 1).unwrap();
+                    assert_eq!(drp, DateRange::from_duration(d, q).unwrap());
+                    assert_eq!(val, &3);
+                }
+                3 => {
+                    let d = Date::from_calendar_date(2022, Month::October, 1).unwrap();
+                    assert_eq!(drp, DateRange::from_duration(d, q).unwrap());
+                    assert_eq!(val, &4);
+                }
+                4 => {
+                    let d = Date::from_calendar_date(2023, Month::January, 1).unwrap();
+                    assert_eq!(drp, DateRange::from_duration(d, q).unwrap());
+                    assert_eq!(val, &5);
+                }
+                5 => {
+                    let d = Date::from_calendar_date(2023, Month::April, 1).unwrap();
+                    assert_eq!(drp, DateRange::from_duration(d, q).unwrap());
+                    assert_eq!(val, &6);
+                }
+                6 => {
+                    let d = Date::from_calendar_date(2023, Month::July, 1).unwrap();
+                    assert_eq!(drp, DateRange::from_duration(d, q).unwrap());
+                    assert_eq!(val, &7);
+                }
+                7 => {
+                    let d = Date::from_calendar_date(2023, Month::October, 1).unwrap();
+                    assert_eq!(drp, DateRange::from_duration(d, q).unwrap());
+                    assert_eq!(val, &8);
+                }
+                _ => {}
+            }
+        }
     }
 }
