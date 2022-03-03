@@ -231,8 +231,8 @@ impl<'a> TimeSeries<'a, f64> {
     /// from a smaller time period to a bigger one, i.e. weeks to quarters
     /// using addition as the aggregation method
     fn add_up(&self, target_timeline: &'a Timeline) -> Self {
-        let source_iter = *self.timeline;
-        let mut target_iter = *target_timeline;
+        let source_iter = self.timeline.into_iter();
+        let mut target_iter = target_timeline.into_iter();
         let mut target_day = target_iter.next().unwrap_or(target_timeline.range).to;
         let mut data: Vec<f64> = Vec::with_capacity(target_timeline.len);
         let mut val = 0.0; // Initialising to avoid a compiler warning but not actually needed
@@ -283,9 +283,9 @@ impl<'a> TimeSeries<'a, f64> {
     /// we'll divide the source values by the number target periods). There
     /// are potentially other ways to do this
     fn add_down(&self, target_timeline: &'a Timeline) -> Self {
-        let source_iter = *self.timeline;
-        let mut target_iter = *target_timeline;
-        let mut target_day = target_iter.range.from();
+        let source_iter = self.timeline.into_iter();
+        let mut target_iter = target_timeline.into_iter();
+        let mut target_day = target_timeline.range.from();
         let mut data: Vec<f64> = Vec::with_capacity(target_timeline.len);
         let mut res_end = 0.0;
         let mut res_start = 0.0;
@@ -534,6 +534,7 @@ impl<'a, T> TimeSeries<'a, T> {
         }
         let tl = *self.timeline;
         let data = tl
+            .into_iter()
             .zip(self.values.iter())
             .zip(other.values.iter())
             .map(|((a, b), c)| (a, b, c))

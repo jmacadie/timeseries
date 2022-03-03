@@ -21,7 +21,6 @@ use time::{util::days_in_year_month, Date, Month};
 pub struct Timeline {
     pub range: DateRange,
     pub periodicity: Period,
-    current_date: Date,
     pub len: usize,
 }
 
@@ -37,7 +36,6 @@ impl Timeline {
         Timeline {
             range,
             periodicity,
-            current_date: range.from(),
             len,
         }
     }
@@ -116,7 +114,26 @@ impl Timeline {
     }
 }
 
-impl Iterator for Timeline {
+impl IntoIterator for Timeline {
+    type Item = DateRange;
+    type IntoIter = TimelineIterator;
+
+    fn into_iter(self) -> Self::IntoIter {
+        TimelineIterator {
+            range: self.range,
+            periodicity: self.periodicity,
+            current_date: self.range.from,
+        }
+    }
+}
+
+pub struct TimelineIterator {
+    range: DateRange,
+    periodicity: Period,
+    current_date: Date,
+}
+
+impl Iterator for TimelineIterator {
     type Item = DateRange;
 
     fn next(&mut self) -> Option<Self::Item> {
