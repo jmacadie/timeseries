@@ -1,5 +1,4 @@
 use core::fmt;
-use std::convert::TryFrom;
 use time::Date;
 
 /// # DateArithmeticOutput
@@ -19,16 +18,12 @@ use time::Date;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DateArithmeticOutput {
     values: Vec<Date>,
-    index: u8,
 }
 
 impl DateArithmeticOutput {
     pub fn new(date: Date) -> Self {
         let values = vec![date];
-        Self {
-            values,
-            index: 0_u8,
-        }
+        Self { values }
     }
 
     pub fn append(&mut self, date: Date) {
@@ -36,12 +31,7 @@ impl DateArithmeticOutput {
     }
 
     pub fn contains(&self, date: Date) -> bool {
-        for d in self.values.iter() {
-            if *d == date {
-                return true;
-            }
-        }
-        false
+        self.values.contains(&date)
     }
 
     pub fn primary(&self) -> Date {
@@ -49,26 +39,12 @@ impl DateArithmeticOutput {
     }
 
     pub fn value(&self, idx: u8) -> Option<Date> {
-        match self.len() {
-            Some(l) => {
-                if (idx + 1) > l {
-                    None
-                } else {
-                    Some(self.values[idx as usize])
-                }
-            }
-            None => None,
-        }
-    }
-
-    fn len(&self) -> Option<u8> {
-        match u8::try_from(self.values.len()) {
-            Ok(l) => Some(l),
-            Err(_) => None,
-        }
+        let d = *self.values.get(idx as usize)?;
+        Some(d)
     }
 }
 
+// region: formatting
 impl fmt::Display for DateArithmeticOutput {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut output = String::new();
@@ -82,26 +58,36 @@ impl fmt::Display for DateArithmeticOutput {
         f.write_str(&output)
     }
 }
+// endregion formatting
 
-// TODO: Fix. This isn't working
-/*impl Iterator for DateArithmeticOutput {
+// region: iterator
+impl IntoIterator for DateArithmeticOutput {
+    type Item = Date;
+    type IntoIter = DateArithmeticOuputIterator;
+
+    fn into_iter(self) -> Self::IntoIter {
+        DateArithmeticOuputIterator {
+            values: self.values,
+            index: 0,
+        }
+    }
+}
+
+pub struct DateArithmeticOuputIterator {
+    values: Vec<Date>,
+    index: usize,
+}
+
+impl Iterator for DateArithmeticOuputIterator {
     type Item = Date;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let max = match self.len() {
-            Some(l) => l - 1,
-            None => {
-                return None;
-            }
-        };
-        if self.index >= max {
-            None
-        } else {
-            self.index += 1;
-            Some(self.values[(self.index - 1) as usize])
-        }
+        let d = *self.values.get(self.index)?;
+        self.index += 1;
+        Some(d)
     }
-}*/
+}
+// endregion iterator
 
 #[cfg(test)]
 mod tests {
@@ -114,7 +100,6 @@ mod tests {
         let dao = DateArithmeticOutput::new(d1);
         assert_eq!(dao.values[0], d1);
         assert_eq!(dao.values.len(), 1);
-        assert_eq!(dao.index, 0);
     }
 
     #[test]
@@ -129,7 +114,6 @@ mod tests {
         assert_eq!(dao.values[0], d1);
         assert_eq!(dao.values[1], d2);
         assert_eq!(dao.values.len(), 2);
-        assert_eq!(dao.index, 0);
 
         // Append another date & check again
         dao.append(d3);
@@ -137,7 +121,6 @@ mod tests {
         assert_eq!(dao.values[1], d2);
         assert_eq!(dao.values[2], d3);
         assert_eq!(dao.values.len(), 3);
-        assert_eq!(dao.index, 0);
     }
 
     #[test]
@@ -179,7 +162,6 @@ mod tests {
         let d1 = Date::from_calendar_date(2022, Month::January, 15).unwrap();
         let d2 = Date::from_calendar_date(2023, Month::January, 15).unwrap();
         let d3 = Date::from_calendar_date(2024, Month::January, 15).unwrap();
-        let d4 = Date::from_calendar_date(2025, Month::January, 15).unwrap();
 
         let mut dao = DateArithmeticOutput::new(d1);
         dao.append(d2);
@@ -189,15 +171,6 @@ mod tests {
         assert_eq!(dao.value(0), Some(d1));
         assert_eq!(dao.value(1), Some(d2));
         assert_eq!(dao.value(2), Some(d3));
-        assert_eq!(dao.value(3), None);
-
-        // Add more than u8 values, which should revert everything to None
-        for _ in 0..u8::MAX {
-            dao.append(d4);
-        }
-        assert_eq!(dao.value(0), None);
-        assert_eq!(dao.value(1), None);
-        assert_eq!(dao.value(2), None);
         assert_eq!(dao.value(3), None);
     }
 
@@ -212,5 +185,34 @@ mod tests {
         dao.append(d3);
 
         assert_eq!(format!("{}", dao), "2022-01-15; 2023-01-15; 2024-01-15");
+    }
+
+    #[test]
+    fn iterator() {
+        let d1 = Date::from_calendar_date(2022, Month::January, 15).unwrap();
+        let d2 = Date::from_calendar_date(2023, Month::January, 15).unwrap();
+        let d3 = Date::from_calendar_date(2024, Month::January, 15).unwrap();
+
+        let mut dao = DateArithmeticOutput::new(d1);
+        dao.append(d2);
+        dao.append(d3);
+
+        // Test in a for loop
+        for (i, d) in dao.into_iter().enumerate() {
+            match i {
+                0 => {
+                    assert_eq!(d, d1);
+                }
+                1 => {
+                    assert_eq!(d, d2);
+                }
+                2 => {
+                    assert_eq!(d, d3);
+                }
+                _ => {
+                    unreachable!();
+                }
+            }
+        }
     }
 }

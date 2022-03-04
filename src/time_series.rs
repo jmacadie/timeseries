@@ -31,7 +31,7 @@ pub enum AggType {
 /// the entire model
 ///
 /// It's also worth noting that these arithmetic operations have been implemented
-/// on pointers to TimeSeries only. This is required as TimeSeries cannot implement
+/// on references to TimeSeries only. This is required as TimeSeries cannot implement
 /// the `Copy` trait, due it's wrapping of a vector, which does not implement the
 /// `Copy` trait. Without the `Copy` trait, all the arithmetic operations, and in fact
 /// any function call, move the operands. This would mean that after `let c = a + b;`
@@ -768,7 +768,6 @@ impl<'a, 'b, T> Iterator for TimeSeriesIterator<'a, 'b, T> {
         Some((dr, val))
     }
 }
-
 // endregion iterator
 
 #[cfg(test)]
@@ -2158,8 +2157,11 @@ mod tests {
                     assert_eq!(drp, DateRange::from_duration(d, q).unwrap());
                     assert_eq!(val, &8);
                 }
-                _ => {}
+                _ => {
+                    unreachable!();
+                }
             }
         }
+        assert_eq!(ts1.into_iter().map(|(_, v)| v).sum::<i32>(), 36);
     }
 }
