@@ -186,20 +186,16 @@ impl Duration {
 
         months -= 1;
 
-        let temp_date: Date;
-        let temp_year: i32;
-        let temp_month: Month;
-        let temp_day: u8;
         let days: i32;
 
-        temp_day = from.day();
-        temp_month = to.month().previous();
-        temp_year = match temp_month {
+        let temp_day = from.day();
+        let temp_month = to.month().previous();
+        let temp_year = match temp_month {
             Month::December => to.year() - 1,
             _ => to.year(),
         };
 
-        temp_date = match Date::from_calendar_date(temp_year, temp_month, temp_day) {
+        let temp_date = match Date::from_calendar_date(temp_year, temp_month, temp_day) {
             Ok(d) => d,
             Err(_) => {
                 // If we have an error then we couldn't get to a real date by adding years and months first.
@@ -393,12 +389,11 @@ impl Duration {
         first_pass: bool,
     ) -> Result<DateArithmeticOutput, TimeSeriesError> {
         // Assign the internal date variable & add days, if that's what we're doing
-        let mut temp: Date;
-        if days_first {
-            temp = self.add_days(date)?;
+        let mut temp = if days_first {
+            self.add_days(date)?
         } else {
-            temp = date;
-        }
+            date
+        };
         let day = temp.day();
 
         let (year, month) = self.add_ym(temp);
@@ -512,7 +507,7 @@ impl fmt::Display for Duration {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut out = String::new();
         if self.years == 1 {
-            out.push_str(&"1 year".to_string());
+            out.push_str("1 year");
         } else if self.years != 0 {
             out.push_str(&format!("{} years", self.years));
         }
@@ -520,7 +515,7 @@ impl fmt::Display for Duration {
             out.push_str(", ");
         }
         if self.months == 1 {
-            out.push_str(&"1 month".to_string());
+            out.push_str("1 month");
         } else if self.months != 0 {
             out.push_str(&format!("{} months", self.months));
         }
@@ -528,7 +523,7 @@ impl fmt::Display for Duration {
             out.push_str(", ");
         }
         if self.days == 1 {
-            out.push_str(&"1 day".to_string());
+            out.push_str("1 day");
         } else if self.days != 0 {
             out.push_str(&format!("{} days", self.days));
         }
@@ -829,18 +824,13 @@ mod tests {
 
     #[test]
     fn all_add_results() {
-        let mut d: Date;
-        let mut t: Date;
-        let mut dur: Duration;
-        let mut res: DateArithmeticOutput;
-
         // TODO: write some more. Just put in a particular edge case for now
 
         // Crazy but true
-        d = Date::from_calendar_date(2022, Month::February, 28).unwrap();
-        dur = Duration::new(2, 3, 0);
-        res = (d + dur).unwrap();
-        t = Date::from_calendar_date(2022, Month::May, 29).unwrap();
+        let mut d = Date::from_calendar_date(2022, Month::February, 28).unwrap();
+        let mut dur = Duration::new(2, 3, 0);
+        let mut res = (d + dur).unwrap();
+        let mut t = Date::from_calendar_date(2022, Month::May, 29).unwrap();
         assert!(!res.contains(t));
         t = Date::from_calendar_date(2022, Month::May, 30).unwrap();
         assert!(res.contains(t));

@@ -113,57 +113,56 @@ where
     /// other side, new values will be brought into scope, which is what the
     /// pad value is required for
     pub fn shift(&self, shift: Duration, pad: T) -> Result<Self, TimeSeriesError> {
-        let shift_len: usize;
-        match self.timeline.periodicity {
+        let shift_len = match self.timeline.periodicity {
             Period::Year => {
                 if shift.days() > 0 || shift.months() > 0 {
                     return Err(TimeSeriesError::BadShift(Period::Year));
                 }
-                shift_len = match shift.years() {
+                match shift.years() {
                     l if l < 0 => cmp::min(-l as usize, self.values.len()),
                     l if l > 0 => cmp::min(l as usize, self.values.len()),
                     _ => 0,
-                };
+                }
             }
             Period::Quarter => {
                 if shift.days() > 0 || shift.months() % 3 > 0 {
                     return Err(TimeSeriesError::BadShift(Period::Year));
                 }
-                shift_len = match shift.years() * 4 + shift.months() / 3 {
+                match shift.years() * 4 + shift.months() / 3 {
                     l if l < 0 => cmp::min(-l as usize, self.values.len()),
                     l if l > 0 => cmp::min(l as usize, self.values.len()),
                     _ => 0,
-                };
+                }
             }
             Period::Month => {
                 if shift.days() > 0 {
                     return Err(TimeSeriesError::BadShift(Period::Year));
                 }
-                shift_len = match shift.years() * 12 + shift.months() {
+                match shift.years() * 12 + shift.months() {
                     l if l < 0 => cmp::min(-l as usize, self.values.len()),
                     l if l > 0 => cmp::min(l as usize, self.values.len()),
                     _ => 0,
-                };
+                }
             }
             Period::Week => {
                 if shift.years() > 0 || shift.months() > 0 || shift.days() % 7 > 0 {
                     return Err(TimeSeriesError::BadShift(Period::Year));
                 }
-                shift_len = match shift.days() / 7 {
+                match shift.days() / 7 {
                     l if l < 0 => cmp::min(-l as usize, self.values.len()),
                     l if l > 0 => cmp::min(l as usize, self.values.len()),
                     _ => 0,
-                };
+                }
             }
             Period::Day => {
                 if shift.years() > 0 || shift.months() > 0 {
                     return Err(TimeSeriesError::BadShift(Period::Year));
                 }
-                shift_len = match shift.days() {
+                match shift.days() {
                     l if l < 0 => cmp::min(-l as usize, self.values.len()),
                     l if l > 0 => cmp::min(l as usize, self.values.len()),
                     _ => 0,
-                };
+                }
             }
         };
         let mut data = Vec::with_capacity(self.values.len());
