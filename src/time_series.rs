@@ -1,5 +1,6 @@
 use crate::{DateRange, Duration, Period, TimeSeriesError, Timeline};
 use std::cmp;
+use std::iter::Sum;
 use std::ops::{Add, Div, Mul, Rem, Sub};
 use time::Date;
 
@@ -768,6 +769,31 @@ impl<'a, 'b, T> Iterator for TimeSeriesIterator<'a, 'b, T> {
     }
 }
 // endregion iterator
+
+// region: utility
+impl<'a, 'b, T> TimeSeries<'a, T>
+where
+    T: 'b + Sum<&'b T>,
+{
+    pub fn sum(&'b self) -> T {
+        self.into_iter().map(|(_, v)| v).sum::<T>()
+    }
+
+    pub fn sum_product(&self, other: &TimeSeries<'a, T>) -> Result<T, TimeSeriesError>
+    where
+        T: Mul + Mul<Output = T> + Copy + Sum<T>,
+    {
+        if self.timeline != other.timeline {
+            return Err(TimeSeriesError::TimelinesDoNotMatch);
+        }
+        Ok(self
+            .into_iter()
+            .zip(other.into_iter())
+            .map(|((_, v1), (_, v2))| *v1 * *v2)
+            .sum::<T>())
+    }
+}
+// endregion utility
 
 #[cfg(test)]
 mod tests {
@@ -2162,5 +2188,47 @@ mod tests {
             }
         }
         assert_eq!(ts1.into_iter().map(|(_, v)| v).sum::<i32>(), 36);
+    }
+
+    #[test]
+    fn sum() {
+        // Create a quarterly timeseries
+        let from = Date::from_calendar_date(2022, Month::January, 1).unwrap();
+        let dur = Duration::new(0, 0, 2);
+        let dr = DateRange::from_duration(from, dur).unwrap();
+        let tl = Timeline::new(dr, Period::Quarter);
+        let v = vec![1, 2, 3, 4, 5, 6, 7, 8];
+        let ts1 = TimeSeries::new(&tl, v).unwrap();
+
+        // Test the sum of the time series
+        assert_eq!(ts1.sum(), 36);
+        assert_eq!(ts1.sum(), 36);
+
+        // Create another timeseries
+        let v = vec![1, 0, 1, 0, 0, 1, 0, 100];
+        let ts2 = TimeSeries::new(&tl, v).unwrap();
+
+        // Test the sum
+        assert_eq!(ts2.sum(), 103);
+    }
+
+    #[test]
+    fn sum_product() {
+        // Create a quarterly timeseries
+        let from = Date::from_calendar_date(2022, Month::January, 1).unwrap();
+        let dur = Duration::new(0, 0, 2);
+        let dr = DateRange::from_duration(from, dur).unwrap();
+        let tl = Timeline::new(dr, Period::Quarter);
+        let v = vec![1, 2, 3, 4, 5, 6, 7, 8];
+        let ts1 = TimeSeries::new(&tl, v).unwrap();
+
+        // Create another timeseries
+        let v = vec![1, 0, 1, 0, 0, 1, 0, 100];
+        let ts2 = TimeSeries::new(&tl, v).unwrap();
+
+        // Test it and make sure the two TS still exist after
+        assert_eq!(ts1.sum_product(&ts2).unwrap(), 810);
+        assert_eq!(ts1.sum(), 36);
+        assert_eq!(ts2.sum(), 103);
     }
 }
