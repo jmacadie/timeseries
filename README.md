@@ -230,22 +230,44 @@ assert_eq!(ts3.value_range(dr).unwrap(), vec![1, 2, 3, 4, 5, 6, 7, 0]);
 ts3 = TimeSeries::new_partial(&tl, 3, v2, 0);
 assert_eq!(ts3.value_range(dr).unwrap(), vec![0, 0, 0, 1, 2, 3, 4, 5]);
 
+// You can create a timeseries from a "generator function"
+// A generator function builds on the previous period's value
+let d2 = Date::from_calendar_date(2022, Month::July, 1).unwrap();
+let op = |t: DateRange, a: i32| -> i32 {
+    if t.from() < d2 {
+        a
+    } else {
+        a + 1
+    }
+};
+let ts4 = TimeSeries::new_generator(&tl, 1, op);
+assert_eq!(ts4.value_range(dr).unwrap(), vec![1, 1, 2, 3, 4, 5, 6, 7]);
+
+// This is useful for building an indexation profile
+let indexation_factor: f64 = f64::powf(1.08, 0.25);
+let op = |_t: DateRange, a: f64| -> f64 { a * indexation_factor };
+let ts4_f = TimeSeries::new_generator(&tl, 1.0, op);
+let d3 = Date::from_calendar_date(2022, Month::October, 1).unwrap();
+let d4 = Date::from_calendar_date(2023, Month::December, 31).unwrap();
+assert!((ts4_f.value(d3).unwrap() - 1.08).abs() < 1e-5);
+assert!((ts4_f.value(d4).unwrap() - 1.1664).abs() < 1e-5);
+
 // You can shift a time series, in both directions
 let shift = Duration::new(0, 15, 0);
-let mut ts4 = ts1.shift(shift, 0).unwrap();
-assert_eq!(ts4.value_range(dr).unwrap(), vec![6, 7, 8, 0, 0, 0, 0, 0]);
-ts4 = ts1.shift(shift.invert(), 0).unwrap();
-assert_eq!(ts4.value_range(dr).unwrap(), vec![0, 0, 0, 0, 0, 1, 2, 3]);
+let mut ts5 = ts1.shift(shift, 0).unwrap();
+assert_eq!(ts5.value_range(dr).unwrap(), vec![6, 7, 8, 0, 0, 0, 0, 0]);
+ts5 = ts1.shift(shift.invert(), 0).unwrap();
+assert_eq!(ts5.value_range(dr).unwrap(), vec![0, 0, 0, 0, 0, 1, 2, 3]);
 
 // You can cast the underlying values to float and int, where datatypes allow
-let ts5 = ts1.cast_f64();
+let ts6 = ts1.cast_f64();
 assert_eq!(
-    ts5.value_range(dr).unwrap(),
+    ts6.value_range(dr).unwrap(),
     vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
 );
 // This is still tbd as you can't get from f64 to i32 without making some lossy adjustments
-//let ts6 = ts5.cast_i32();
-//assert_eq!(ts6.value_range(dr).unwrap(), vec![1, 2, 3, 4, 5, 6, 7, 8]);
+//let ts7 = ts6.cast_i32();
+//assert_eq!(ts7.value_range(dr).unwrap(), vec![1, 2, 3, 4, 5, 6, 7, 8]);
 
 // You can update values of a TimeSeries in place
 // Either with a straight replacement or you can add
@@ -257,26 +279,26 @@ assert_eq!(ts3.value_range(dr).unwrap(), vec![0, 300, 0, 1, 2, 3, 4, 5]);
 // You can change the periodicity of a TimeSeries
 // N.B. only works with f64 currently as you might need to split a period
 let tly = Timeline::new(dr, Period::Year);
-let ts6 = ts5.change_periodicity(&tly, AggType::Add).unwrap();
-assert_eq!(ts6.value_range(dr).unwrap(), vec![10.0, 26.0]);
+let ts8 = ts6.change_periodicity(&tly, AggType::Add).unwrap();
+assert_eq!(ts8.value_range(dr).unwrap(), vec![10.0, 26.0]);
 
 // All of which is pre-amble to the real purpose of Time Series obejcts which is to combine them
 // Pair-wise combination is assumed
 
 // Standard primitive operators work
-let mut ts7 = (&ts1 + &ts3).unwrap();
+let mut ts9 = (&ts1 + &ts3).unwrap();
 assert_eq!(
-    ts7.value_range(dr).unwrap(),
+    ts9.value_range(dr).unwrap(),
     vec![1, 302, 3, 5, 7, 9, 11, 13]
 );
-ts7 = (&ts1 - &ts3).unwrap();
+ts9 = (&ts1 - &ts3).unwrap();
 assert_eq!(
-    ts7.value_range(dr).unwrap(),
+    ts9.value_range(dr).unwrap(),
     vec![1, -298, 3, 3, 3, 3, 3, 3]
 );
-ts7 = (&ts1 * &ts3).unwrap();
+ts9 = (&ts1 * &ts3).unwrap();
 assert_eq!(
-    ts7.value_range(dr).unwrap(),
+    ts9.value_range(dr).unwrap(),
     vec![0, 600, 0, 4, 10, 18, 28, 40]
 );
 
@@ -288,8 +310,8 @@ let op = |(&a, &b): (&i32, &i32)| -> i32 {
         b + 1
     }
 };
-ts7 = ts1.apply(&ts3, op).unwrap();
-assert_eq!(ts7.value_range(dr).unwrap(), vec![1, 1, 1, 2, 3, 4, 5, 6]);
+let mut ts10 = ts1.apply(&ts3, op).unwrap();
+assert_eq!(ts10.value_range(dr).unwrap(), vec![1, 1, 1, 2, 3, 4, 5, 6]);
 
 // and we can pull the same trick, but additionally with reference to the timeline
 let date = Date::from_calendar_date(2023, Month::April, 1).unwrap();
@@ -302,9 +324,9 @@ let op = |(t, &a, &b): (DateRange, &i32, &i32)| -> i32 {
         b + 1
     }
 };
-ts7 = ts1.apply_with_time(&ts3, op).unwrap();
+ts10 = ts1.apply_with_time(&ts3, op).unwrap();
 assert_eq!(
-    ts7.value_range(dr).unwrap(),
+    ts10.value_range(dr).unwrap(),
     vec![1, 1, 1, 2, 3, 1000, 5, 6]
 );
 
@@ -331,6 +353,12 @@ for (i, (drp, val)) in ts1.into_iter().enumerate() {
         _ => {}
     }
 }
+
+// There are also some utility functions defined on the the time series
+// These mimic Excel functionality
+// Only done SUM and SUMPRODUCT so far, but more to follow...
+assert_eq!(ts10.sum(), 1019);
+assert_eq!(ts3.sum_product(&ts1).unwrap(), 700)
 ```
 
 ## Stuff that needs doing
@@ -340,12 +368,11 @@ In no particular order:
 * Import data from various sources (CSV, Excel etc)
 * Output model results, to CSV at first, if nothing else
 * Output charts
-* Think about how to debug a model - naive implementation would be to build a grid view of outputs, like Excel, but is there a different way to achieve the same end goal?
+* Think about how to debug a model - naive implementation would be to build a grid view of outputs, like Excel, but is there a different way to achieve the same end goal? Can we use something like Yew to output an interactive view on the calculations, rendered as a webpage?
 * Apply TS combinations to more than just two source TS objects, an Excel formula can reference any number of dependents. I think this is going to need a macro given the potentially variable number of inputs
-* Generator style TS that build on the previous period's values (e.g. indeaxtion formulae)
 * Change Periodicity needs work - can it be extended beyond f64? Should it be applied to other aggregation methods than Add?
 * Errors are super duff. No idea what I'm doing here but these should definitely be re-worked
-* Documentation about how to use every part of this library
+* Documentation about how to use every part of this library. I have now put faily decent code examples up on this page but it now feels like too much here. Should I create a booK?
 * Put this on crates.io?
 
 ---
