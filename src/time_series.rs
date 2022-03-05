@@ -102,6 +102,19 @@ where
         TimeSeries::new_unchecked(timeline, data)
     }
 
+    pub fn new_generator<F>(timeline: &'a Timeline, seed: T, mut generator: F) -> Self
+    where
+        F: FnMut(DateRange, T) -> T,
+        T: Copy,
+    {
+        let mut values = Vec::with_capacity(timeline.len);
+        let mut val = seed;
+        for dr in timeline.into_iter() {
+            val = generator(dr, val);
+            values.push(val);
+        }
+        TimeSeries::new_unchecked(timeline, values)
+    }
     // endregion constructors
 
     // region: shift
@@ -867,6 +880,40 @@ mod tests {
         v = vec![1, 2, 3, 4];
         ts = TimeSeries::new_partial(&tl, 12, v, 0);
         assert_eq!(ts.values, vec![0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    }
+
+    #[test]
+    fn create_generator_timeseries() {
+        // Create a timeline
+        let from = Date::from_calendar_date(2022, Month::January, 1).unwrap();
+        let dur = Duration::new(0, 0, 2);
+        let dr = DateRange::from_duration(from, dur).unwrap();
+        let tl = Timeline::new(dr, Period::Quarter);
+
+        // Test an i32 incrementer
+        let d = Date::from_calendar_date(2022, Month::July, 1).unwrap();
+        let op = |t: DateRange, a: i32| -> i32 {
+            if t.from < d {
+                a
+            } else {
+                a + 1
+            }
+        };
+        let ts = TimeSeries::new_generator(&tl, 1, op);
+        assert_eq!(ts.values, vec![1, 1, 2, 3, 4, 5, 6, 7]);
+
+        // Test an indexation style constructor
+        let indexation_factor: f64 = f64::powf(1.08, 0.25);
+        let op = |_t: DateRange, a: f64| -> f64 { a * indexation_factor };
+        let ts = TimeSeries::new_generator(&tl, 1.0, op);
+        assert!((ts.values[0] - 1.01942655).abs() < 1e-5);
+        assert!((ts.values[1] - 1.03923048).abs() < 1e-5);
+        assert!((ts.values[2] - 1.05941914).abs() < 1e-5);
+        assert!((ts.values[3] - 1.08).abs() < 1e-5);
+        assert!((ts.values[4] - 1.10098067).abs() < 1e-5);
+        assert!((ts.values[5] - 1.12236892).abs() < 1e-5);
+        assert!((ts.values[6] - 1.14417268).abs() < 1e-5);
+        assert!((ts.values[7] - 1.1664).abs() < 1e-5);
     }
 
     #[test]
