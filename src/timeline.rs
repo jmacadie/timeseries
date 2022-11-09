@@ -126,8 +126,27 @@ impl Timeline {
         Some(DateRange::new(start, end))
     }
     // endregion indexing
+
+    // region: head_tail
+    pub fn head(&self) -> Option<DateRange> {
+        self.index(0)
+    }
+
+    pub fn tail(&self) -> Option<Timeline> {
+        let head = self.head()?;
+        let tail_range = DateRange::new(head.to, self.range.to());
+        Some(Timeline::new(tail_range, self.periodicity))
+    }
+
+    pub fn split_first(&self) -> (Option<DateRange>, Option<Timeline>) {
+        (self.head(), self.tail())
+    }
+    // endregion head_tail
+    // TODO: Head, tail, split...
 }
 
+// TODO: proper iterators, now I know how :)
+// region: iterators
 impl IntoIterator for Timeline {
     type Item = DateRange;
     type IntoIter = TimelineIterator;
@@ -200,6 +219,7 @@ impl Iterator for TimelineIterator {
         Some(date_range)
     }
 }
+// endregion iterators
 
 #[cfg(test)]
 mod tests {

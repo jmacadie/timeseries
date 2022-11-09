@@ -1,6 +1,7 @@
 use crate::{DateRange, Duration, Period, TimeSeriesError, Timeline};
 use std::cmp;
 use std::iter::Sum;
+use std::mem;
 use std::ops::{Add, Div, Mul, Rem, Sub};
 use time::Date;
 
@@ -40,12 +41,12 @@ pub enum AggType {
 /// are on references, so `let c = &a + &b;`, which allows `a` and `b` to persist beyond
 /// the addition call
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TimeSeries<'a, T> {
-    timeline: &'a Timeline,
+pub struct TimeSeries<'tl, T> {
+    timeline: &'tl Timeline,
     values: Vec<T>,
 }
 
-impl<'a, T> TimeSeries<'a, T>
+impl<'tl, T> TimeSeries<'tl, T>
 where
     T: Clone,
 {
@@ -57,7 +58,7 @@ where
     /// length. This is a fundamental requirement for TimeSeries
     /// objects to be well formed, so restricting this to be an internal
     /// method only
-    fn new_unchecked(timeline: &'a Timeline, values: Vec<T>) -> Self {
+    fn new_unchecked(timeline: &'tl Timeline, values: Vec<T>) -> Self {
         TimeSeries { timeline, values }
     }
 
@@ -65,7 +66,7 @@ where
     ///
     /// This method will throw an error if the length of the timeline provided and the
     /// length of the value vector do not match
-    pub fn new(timeline: &'a Timeline, values: Vec<T>) -> Result<Self, TimeSeriesError> {
+    pub fn new(timeline: &'tl Timeline, values: Vec<T>) -> Result<Self, TimeSeriesError> {
         if values.len() != timeline.len {
             return Err(TimeSeriesError::TimelineDoesNotMatchValues);
         }
@@ -82,7 +83,7 @@ where
     /// In extremis, if the start index provided is greater than the
     /// timeline, then the returned TimeSeries will only contain the
     /// pad values and none of the values vector will remain
-    pub fn new_partial(timeline: &'a Timeline, start: usize, values: Vec<T>, pad: T) -> Self {
+    pub fn new_partial(timeline: &'tl Timeline, start: usize, values: Vec<T>, pad: T) -> Self {
         let mut data;
         // If start is after the timeline then just return a vector full of the pad value
         if start >= timeline.len {
@@ -102,7 +103,7 @@ where
         TimeSeries::new_unchecked(timeline, data)
     }
 
-    pub fn new_generator<F>(timeline: &'a Timeline, seed: T, mut generator: F) -> Self
+    pub fn new_generator<F>(timeline: &'tl Timeline, seed: T, mut generator: F) -> Self
     where
         F: FnMut(DateRange, T) -> T,
         T: Copy,
@@ -216,10 +217,10 @@ where
 
 // region: change_periodicity
 // TODO: can we do this for other types as well?
-impl<'a> TimeSeries<'a, f64> {
+impl<'tl> TimeSeries<'tl, f64> {
     pub fn change_periodicity(
         &self,
-        timeline: &'a Timeline,
+        timeline: &'tl Timeline,
         transform: AggType,
     ) -> Result<Self, TimeSeriesError> {
         if timeline.range != self.timeline.range {
@@ -243,7 +244,7 @@ impl<'a> TimeSeries<'a, f64> {
     /// Internal method to change the periodicity of a TimeSeries object
     /// from a smaller time period to a bigger one, i.e. weeks to quarters
     /// using addition as the aggregation method
-    fn add_up(&self, target_timeline: &'a Timeline) -> Self {
+    fn add_up(&self, target_timeline: &'tl Timeline) -> Self {
         let source_iter = self.timeline.into_iter();
         let mut target_iter = target_timeline.into_iter();
         let mut target_day = target_iter.next().unwrap_or(target_timeline.range).to;
@@ -295,7 +296,7 @@ impl<'a> TimeSeries<'a, f64> {
     /// time series values will all be the same for each source period (i.e
     /// we'll divide the source values by the number target periods). There
     /// are potentially other ways to do this
-    fn add_down(&self, target_timeline: &'a Timeline) -> Self {
+    fn add_down(&self, target_timeline: &'tl Timeline) -> Self {
         let source_iter = self.timeline.into_iter();
         let mut target_iter = target_timeline.into_iter();
         let mut target_day = target_timeline.range.from();
@@ -345,7 +346,7 @@ impl<'a> TimeSeries<'a, f64> {
 // endregion change_periodicity
 
 // region: update
-impl<'a, T> TimeSeries<'a, T> {
+impl<'tl, T> TimeSeries<'tl, T> {
     /// Update the `TimeSeries` in place. Will over-write the value at the
     /// date with the supplied value. Use `.update_add()` if you want to add the
     /// new value to the current value at the date
@@ -356,7 +357,7 @@ impl<'a, T> TimeSeries<'a, T> {
     }
 }
 
-impl<'a, T> TimeSeries<'a, T>
+impl<'tl, T> TimeSeries<'tl, T>
 where
     T: Add + Add<Output = T> + Copy,
 {
@@ -371,13 +372,13 @@ where
 // endregion update
 
 // region: cast_values
-impl<'a, T> TimeSeries<'a, T>
+impl<'tl, T> TimeSeries<'tl, T>
 where
     T: Copy + Into<f64>,
 {
     /// Change underlying data series into 64-bit float type. The source type has to
     /// be capable of beinng converted e.e. won't work on String
-    pub fn cast_f64(&self) -> TimeSeries<'a, f64> {
+    pub fn cast_f64(&self) -> TimeSeries<'tl, f64> {
         let mut data = Vec::with_capacity(self.values.len());
         for val in self.values.iter() {
             let v = *val;
@@ -387,11 +388,11 @@ where
     }
 }
 
-impl<'a, T> TimeSeries<'a, T>
+impl<'tl, T> TimeSeries<'tl, T>
 where
     T: Copy + Into<i32>,
 {
-    pub fn cast_i32(&self) -> TimeSeries<'a, i32> {
+    pub fn cast_i32(&self) -> TimeSeries<'tl, i32> {
         let mut data = Vec::with_capacity(self.values.len());
         for val in self.values.iter() {
             let v = *val;
@@ -403,17 +404,17 @@ where
 // endregion cast_values
 
 // region: empty_constuctors
-impl<'a> TimeSeries<'a, i32> {
+impl<'tl> TimeSeries<'tl, i32> {
     /// For a given timline, create a TimeSeries of 32-bit integers, all with value 0
-    pub fn empty_i(timeline: &'a Timeline) -> TimeSeries<'a, i32> {
+    pub fn empty_i(timeline: &'tl Timeline) -> TimeSeries<'tl, i32> {
         let values = vec![0; timeline.len];
         TimeSeries::new_unchecked(timeline, values)
     }
 }
 
-impl<'a> TimeSeries<'a, f64> {
+impl<'tl> TimeSeries<'tl, f64> {
     /// For a given timline, create a TimeSeries of 64-bit floats, all with value 0
-    pub fn empty_f(timeline: &'a Timeline) -> TimeSeries<'a, f64> {
+    pub fn empty_f(timeline: &'tl Timeline) -> TimeSeries<'tl, f64> {
         let values = vec![0.0; timeline.len];
         TimeSeries::new_unchecked(timeline, values)
     }
@@ -426,7 +427,7 @@ impl<'a> TimeSeries<'a, f64> {
 
 // region: generic_func
 
-impl<'a, T> TimeSeries<'a, T> {
+impl<'tl, T> TimeSeries<'tl, T> {
     /// Allows the user to provide a closure that defines the pairwise combination
     /// of two time series
     ///
@@ -472,9 +473,9 @@ impl<'a, T> TimeSeries<'a, T> {
     /// ```
     pub fn apply<F>(
         &self,
-        other: &TimeSeries<'a, T>,
+        other: &TimeSeries<'tl, T>,
         func: F,
-    ) -> Result<TimeSeries<'a, T>, TimeSeriesError>
+    ) -> Result<TimeSeries<'tl, T>, TimeSeriesError>
     where
         F: FnMut((&T, &T)) -> T,
         T: Copy,
@@ -535,9 +536,9 @@ impl<'a, T> TimeSeries<'a, T> {
     /// ```
     pub fn apply_with_time<F>(
         &self,
-        other: &TimeSeries<'a, T>,
+        other: &TimeSeries<'tl, T>,
         func: F,
-    ) -> Result<TimeSeries<'a, T>, TimeSeriesError>
+    ) -> Result<TimeSeries<'tl, T>, TimeSeriesError>
     where
         F: FnMut((DateRange, &T, &T)) -> T,
         T: Copy,
@@ -564,13 +565,13 @@ impl<'a, T> TimeSeries<'a, T> {
 
 // region: arithmetic_add
 // Add timeseries to timeseries
-impl<'a, 'b, 'c, T> Add<&'c TimeSeries<'a, T>> for &'b TimeSeries<'a, T>
+impl<'tl, 'dat_lhs, 'dat_rhs, T> Add<&'dat_rhs TimeSeries<'tl, T>> for &'dat_lhs TimeSeries<'tl, T>
 where
     T: Add + Add<Output = T> + Copy,
 {
-    type Output = Result<TimeSeries<'a, T>, TimeSeriesError>;
+    type Output = Result<TimeSeries<'tl, T>, TimeSeriesError>;
 
-    fn add(self, rhs: &'c TimeSeries<'a, T>) -> Result<TimeSeries<'a, T>, TimeSeriesError> {
+    fn add(self, rhs: &'dat_rhs TimeSeries<'tl, T>) -> Result<TimeSeries<'tl, T>, TimeSeriesError> {
         if self.timeline != rhs.timeline {
             return Err(TimeSeriesError::TimelinesDoNotMatch);
         }
@@ -586,13 +587,13 @@ where
 }
 
 // Add static value to timeseries
-impl<'a, 'b, T> Add<T> for &'b TimeSeries<'a, T>
+impl<'tl, 'dat, T> Add<T> for &'dat TimeSeries<'tl, T>
 where
     T: Add + Add<Output = T> + Copy,
 {
-    type Output = TimeSeries<'a, T>;
+    type Output = TimeSeries<'tl, T>;
 
-    fn add(self, rhs: T) -> TimeSeries<'a, T> {
+    fn add(self, rhs: T) -> TimeSeries<'tl, T> {
         let data = self.values.iter().map(|&a| a + rhs).collect();
         TimeSeries::new_unchecked(self.timeline, data)
     }
@@ -601,13 +602,13 @@ where
 
 // region: arithmetic_sub
 // Subtract timeseries from timeseries
-impl<'a, 'b, 'c, T> Sub<&'c TimeSeries<'a, T>> for &'b TimeSeries<'a, T>
+impl<'tl, 'dat_lhs, 'dat_rhs, T> Sub<&'dat_rhs TimeSeries<'tl, T>> for &'dat_lhs TimeSeries<'tl, T>
 where
     T: Sub + Sub<Output = T> + Copy,
 {
-    type Output = Result<TimeSeries<'a, T>, TimeSeriesError>;
+    type Output = Result<TimeSeries<'tl, T>, TimeSeriesError>;
 
-    fn sub(self, rhs: &'c TimeSeries<'a, T>) -> Result<TimeSeries<'a, T>, TimeSeriesError> {
+    fn sub(self, rhs: &'dat_rhs TimeSeries<'tl, T>) -> Result<TimeSeries<'tl, T>, TimeSeriesError> {
         if self.timeline != rhs.timeline {
             return Err(TimeSeriesError::TimelinesDoNotMatch);
         }
@@ -623,13 +624,13 @@ where
 }
 
 // Subtract static value from timeseries
-impl<'a, 'b, T> Sub<T> for &'b TimeSeries<'a, T>
+impl<'tl, 'dat, T> Sub<T> for &'dat TimeSeries<'tl, T>
 where
     T: Sub + Sub<Output = T> + Copy,
 {
-    type Output = TimeSeries<'a, T>;
+    type Output = TimeSeries<'tl, T>;
 
-    fn sub(self, rhs: T) -> TimeSeries<'a, T> {
+    fn sub(self, rhs: T) -> TimeSeries<'tl, T> {
         let data = self.values.iter().map(|&a| a - rhs).collect();
         TimeSeries::new_unchecked(self.timeline, data)
     }
@@ -638,13 +639,13 @@ where
 
 // region: arithmetic_mul
 // Multiply one timeseries with another timeseries
-impl<'a, 'b, 'c, T> Mul<&'c TimeSeries<'a, T>> for &'b TimeSeries<'a, T>
+impl<'tl, 'dat_lhs, 'dat_rhs, T> Mul<&'dat_rhs TimeSeries<'tl, T>> for &'dat_lhs TimeSeries<'tl, T>
 where
     T: Mul + Mul<Output = T> + Copy,
 {
-    type Output = Result<TimeSeries<'a, T>, TimeSeriesError>;
+    type Output = Result<TimeSeries<'tl, T>, TimeSeriesError>;
 
-    fn mul(self, rhs: &'c TimeSeries<'a, T>) -> Result<TimeSeries<'a, T>, TimeSeriesError> {
+    fn mul(self, rhs: &'dat_rhs TimeSeries<'tl, T>) -> Result<TimeSeries<'tl, T>, TimeSeriesError> {
         if self.timeline != rhs.timeline {
             return Err(TimeSeriesError::TimelinesDoNotMatch);
         }
@@ -660,13 +661,13 @@ where
 }
 
 // Multiply one timeseries with a static value
-impl<'a, 'b, T> Mul<T> for &'b TimeSeries<'a, T>
+impl<'tl, 'dat, T> Mul<T> for &'dat TimeSeries<'tl, T>
 where
     T: Mul + Mul<Output = T> + Copy,
 {
-    type Output = TimeSeries<'a, T>;
+    type Output = TimeSeries<'tl, T>;
 
-    fn mul(self, rhs: T) -> TimeSeries<'a, T> {
+    fn mul(self, rhs: T) -> TimeSeries<'tl, T> {
         let data = self.values.iter().map(|&a| a * rhs).collect();
         TimeSeries::new_unchecked(self.timeline, data)
     }
@@ -675,13 +676,13 @@ where
 
 // region: arithmetic_div
 // Divide one timeseries with another timeseries
-impl<'a, 'b, 'c, T> Div<&'c TimeSeries<'a, T>> for &'b TimeSeries<'a, T>
+impl<'tl, 'dat_lhs, 'dat_rhs, T> Div<&'dat_rhs TimeSeries<'tl, T>> for &'dat_lhs TimeSeries<'tl, T>
 where
     T: Div + Div<Output = T> + Copy,
 {
-    type Output = Result<TimeSeries<'a, T>, TimeSeriesError>;
+    type Output = Result<TimeSeries<'tl, T>, TimeSeriesError>;
 
-    fn div(self, rhs: &'c TimeSeries<'a, T>) -> Result<TimeSeries<'a, T>, TimeSeriesError> {
+    fn div(self, rhs: &'dat_rhs TimeSeries<'tl, T>) -> Result<TimeSeries<'tl, T>, TimeSeriesError> {
         if self.timeline != rhs.timeline {
             return Err(TimeSeriesError::TimelinesDoNotMatch);
         }
@@ -697,13 +698,13 @@ where
 }
 
 // Divide one timeseries with a static value
-impl<'a, 'b, T> Div<T> for &'b TimeSeries<'a, T>
+impl<'tl, 'dat, T> Div<T> for &'dat TimeSeries<'tl, T>
 where
     T: Div + Div<Output = T> + Copy,
 {
-    type Output = TimeSeries<'a, T>;
+    type Output = TimeSeries<'tl, T>;
 
-    fn div(self, rhs: T) -> TimeSeries<'a, T> {
+    fn div(self, rhs: T) -> TimeSeries<'tl, T> {
         let data = self.values.iter().map(|&a| a / rhs).collect();
         TimeSeries::new_unchecked(self.timeline, data)
     }
@@ -712,13 +713,13 @@ where
 
 // region: arithmetic_rem
 // Remainder of one timeseries from another timeseries
-impl<'a, 'b, 'c, T> Rem<&'c TimeSeries<'a, T>> for &'b TimeSeries<'a, T>
+impl<'tl, 'dat_lhs, 'dat_rhs, T> Rem<&'dat_rhs TimeSeries<'tl, T>> for &'dat_lhs TimeSeries<'tl, T>
 where
     T: Rem + Rem<Output = T> + Copy,
 {
-    type Output = Result<TimeSeries<'a, T>, TimeSeriesError>;
+    type Output = Result<TimeSeries<'tl, T>, TimeSeriesError>;
 
-    fn rem(self, rhs: &'c TimeSeries<'a, T>) -> Result<TimeSeries<'a, T>, TimeSeriesError> {
+    fn rem(self, rhs: &'dat_rhs TimeSeries<'tl, T>) -> Result<TimeSeries<'tl, T>, TimeSeriesError> {
         if self.timeline != rhs.timeline {
             return Err(TimeSeriesError::TimelinesDoNotMatch);
         }
@@ -734,13 +735,13 @@ where
 }
 
 // Remainder of one timeseries from a static value
-impl<'a, 'b, T> Rem<T> for &'b TimeSeries<'a, T>
+impl<'tl, 'dat, T> Rem<T> for &'dat TimeSeries<'tl, T>
 where
     T: Rem + Rem<Output = T> + Copy,
 {
-    type Output = TimeSeries<'a, T>;
+    type Output = TimeSeries<'tl, T>;
 
-    fn rem(self, rhs: T) -> TimeSeries<'a, T> {
+    fn rem(self, rhs: T) -> TimeSeries<'tl, T> {
         let data = self.values.iter().map(|&a| a % rhs).collect();
         TimeSeries::new_unchecked(self.timeline, data)
     }
@@ -749,42 +750,125 @@ where
 // endregion arithmetic_ops
 
 // region: iterator
-impl<'a, 'b, T> IntoIterator for &'b TimeSeries<'a, T>
-where
-    T: 'b,
-{
-    type Item = (DateRange, &'b T);
-    type IntoIter = TimeSeriesIterator<'a, 'b, T>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        TimeSeriesIterator {
-            timeline: self.timeline,
-            values: &self.values[..],
-            index: 0,
-        }
-    }
-}
-
-pub struct TimeSeriesIterator<'a, 'b, T> {
-    timeline: &'a Timeline,
-    values: &'b [T],
+// region: owned_ierator
+pub struct IntoIter<'tl, T> {
+    timeline: &'tl Timeline,
+    values: Vec<T>,
     index: usize,
 }
 
-impl<'a, 'b, T> Iterator for TimeSeriesIterator<'a, 'b, T> {
-    type Item = (DateRange, &'b T);
+impl<'tl, T> Iterator for IntoIter<'tl, T>
+where
+    T: Clone,
+{
+    type Item = (DateRange, T);
 
     fn next(&mut self) -> Option<Self::Item> {
         let dr = self.timeline.index(self.index as i32)?;
         let val = self.values.get(self.index)?;
+        let val = val.clone();
         self.index += 1;
         Some((dr, val))
     }
 }
+
+impl<'tl, T> IntoIterator for TimeSeries<'tl, T>
+where
+    T: Clone,
+{
+    type Item = (DateRange, T);
+    type IntoIter = IntoIter<'tl, T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        IntoIter {
+            timeline: self.timeline,
+            values: self.values,
+            index: 0,
+        }
+    }
+}
+// endregion owned_iterator
+
+// region: ref_ierator
+pub struct Iter<'dat, T> {
+    timeline: Option<Timeline>,
+    values: &'dat [T],
+}
+
+impl<'dat, T> Iterator for Iter<'dat, T> {
+    type Item = (DateRange, &'dat T);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let (dr_head, dr_tail) = self.timeline?.split_first();
+        let dr = dr_head?;
+        self.timeline = dr_tail;
+        let (val, tail) = self.values.split_first()?;
+        self.values = tail;
+        Some((dr, val))
+    }
+}
+
+impl<'tl, 'dat, T> TimeSeries<'tl, T> {
+    pub fn iter(&'dat self) -> Iter<'dat, T> {
+        Iter {
+            timeline: Some(*self.timeline),
+            values: &self.values[..],
+        }
+    }
+}
+
+impl<'tl, 'dat, T> IntoIterator for &'dat TimeSeries<'tl, T> {
+    type Item = (DateRange, &'dat T);
+    type IntoIter = Iter<'dat, T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+// endregion ref_iterator
+
+// region: mutref_ierator
+pub struct IterMut<'dat, T> {
+    timeline: Option<Timeline>,
+    values: &'dat mut [T],
+}
+
+impl<'dat, T> Iterator for IterMut<'dat, T> {
+    type Item = (DateRange, &'dat mut T);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let (dr_head, dr_tail) = self.timeline?.split_first();
+        let dr = dr_head?;
+        self.timeline = dr_tail;
+        let values = mem::replace(&mut self.values, &mut []);
+        let (val, tail) = values.split_first_mut()?;
+        self.values = tail;
+        Some((dr, val))
+    }
+}
+
+impl<'tl, 'dat, T> TimeSeries<'tl, T> {
+    pub fn iter_mut(&'dat mut self) -> IterMut<'dat, T> {
+        IterMut {
+            timeline: Some(*self.timeline),
+            values: &mut self.values[..],
+        }
+    }
+}
+
+impl<'tl, 'dat, T> IntoIterator for &'dat mut TimeSeries<'tl, T> {
+    type Item = (DateRange, &'dat mut T);
+    type IntoIter = IterMut<'dat, T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter_mut()
+    }
+}
+// endregion mutref_iterator
 // endregion iterator
 
 // region: utility
-impl<'a, 'b, T> TimeSeries<'a, T>
+impl<'tl, 'b, T> TimeSeries<'tl, T>
 where
     T: 'b + Sum<&'b T>,
 {
@@ -792,7 +876,7 @@ where
         self.into_iter().map(|(_, v)| v).sum::<T>()
     }
 
-    pub fn sum_product(&self, other: &TimeSeries<'a, T>) -> Result<T, TimeSeriesError>
+    pub fn sum_product(&self, other: &TimeSeries<'tl, T>) -> Result<T, TimeSeriesError>
     where
         T: Mul + Mul<Output = T> + Copy + Sum<T>,
     {
@@ -2187,7 +2271,7 @@ mod tests {
 
         // Test a for loop
         let q = Duration::new(0, 3, 0);
-        for (i, (drp, val)) in ts1.into_iter().enumerate() {
+        for (i, (drp, val)) in ts1.iter().enumerate() {
             match i {
                 0 => {
                     let d = Date::from_calendar_date(2022, Month::January, 1).unwrap();

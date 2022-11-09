@@ -289,7 +289,7 @@ fn readme_timeseries() {
     // You can iterate through a TimeSeries
     // ... which means things like zip, map, fold etc will all work
     let q = Duration::new(0, 3, 0);
-    for (i, (drp, val)) in ts1.into_iter().enumerate() {
+    for (i, (drp, val)) in ts1.iter().enumerate() {
         match i {
             0 => {
                 let d = Date::from_calendar_date(2022, Month::January, 1).unwrap();
