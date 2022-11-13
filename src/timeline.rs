@@ -163,28 +163,18 @@ impl Timeline {
     // TODO: Head, tail, split...
 }
 
-// TODO: proper iterators, now I know how :)
 // region: iterators
-impl IntoIterator for Timeline {
-    type Item = DateRange;
-    type IntoIter = TimelineIterator;
+// Not going to implement the owned iterator since `Timeline` is `Copy`
+// No point implementing mut ref iterator as the underlying dateranges don't exist
 
-    fn into_iter(self) -> Self::IntoIter {
-        TimelineIterator {
-            range: self.range,
-            periodicity: self.periodicity,
-            current_date: self.range.from,
-        }
-    }
-}
-
-pub struct TimelineIterator {
+// region: ref_iterator
+pub struct Iter {
     range: DateRange,
     periodicity: Period,
     current_date: Date,
 }
 
-impl Iterator for TimelineIterator {
+impl Iterator for Iter {
     type Item = DateRange;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -237,6 +227,26 @@ impl Iterator for TimelineIterator {
         Some(date_range)
     }
 }
+
+impl Timeline {
+    fn iter(&self) -> Iter {
+        Iter {
+            range: self.range,
+            periodicity: self.periodicity,
+            current_date: self.range.from,
+        }
+    }
+}
+
+impl IntoIterator for &Timeline {
+    type Item = DateRange;
+    type IntoIter = Iter;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+// endregion ref_iterator
 // endregion iterators
 
 #[cfg(test)]
@@ -410,7 +420,7 @@ mod tests {
         // Iterate Days
         let mut tl = Timeline::new(dr, Period::Day);
         let mut counter = 0;
-        for dr in tl {
+        for dr in &tl {
             if counter == 0 {
                 assert_eq!(dr, tl.index(0).unwrap(), "First Day");
             }
@@ -424,7 +434,7 @@ mod tests {
         // Iterate Weeks
         tl = tl.change_periodicity(Period::Week);
         counter = 0;
-        for dr in tl {
+        for dr in &tl {
             if counter == 0 {
                 assert_eq!(dr, tl.index(0).unwrap(), "First Week");
             }
@@ -438,7 +448,7 @@ mod tests {
         // Iterate Months
         tl = tl.change_periodicity(Period::Month);
         counter = 0;
-        for dr in tl {
+        for dr in &tl {
             if counter == 0 {
                 assert_eq!(dr, tl.index(0).unwrap(), "First Month");
             }
@@ -452,7 +462,7 @@ mod tests {
         // Iterate Quarters
         tl = tl.change_periodicity(Period::Quarter);
         counter = 0;
-        for dr in tl {
+        for dr in &tl {
             if counter == 0 {
                 assert_eq!(dr, tl.index(0).unwrap(), "First Quarter");
             }
@@ -466,7 +476,7 @@ mod tests {
         // Iterate Years
         tl = tl.change_periodicity(Period::Year);
         counter = 0;
-        for dr in tl {
+        for dr in &tl {
             if counter == 0 {
                 assert_eq!(dr, tl.index(0).unwrap(), "First Year");
             }
@@ -485,7 +495,7 @@ mod tests {
         let dr = DateRange::new(from, to);
         let tl = Timeline::new(dr, Period::Quarter);
         let mut i = 0;
-        for test_range in tl {
+        for test_range in &tl {
             assert_eq!(test_range.to().year(), 2022);
             i += 1;
             if i > 4 {

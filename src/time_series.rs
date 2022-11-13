@@ -110,7 +110,7 @@ where
     {
         let mut values = Vec::with_capacity(timeline.len);
         let mut val = seed;
-        for dr in timeline.into_iter() {
+        for dr in timeline {
             val = generator(dr, val);
             values.push(val);
         }
