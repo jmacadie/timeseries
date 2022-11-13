@@ -1,7 +1,6 @@
 use crate::{DateRange, Duration, Period, TimeSeriesError, Timeline};
 use std::cmp;
 use std::iter::Sum;
-use std::mem;
 use std::ops::{Add, Div, Mul, Rem, Sub};
 use time::Date;
 
@@ -11,7 +10,7 @@ pub enum AggType {
     Linear,
 }
 
-/// # TimeSeries
+/// # `TimeSeries`
 ///
 /// A compound object that holds both a timeline and an array of values that
 /// meaningfully relate to the matching time periods from the timeline
@@ -21,19 +20,19 @@ pub enum AggType {
 ///
 /// The values are a vector of any type.
 ///
-/// TimeSeries objects are intended to be added, multiplied, subtracted and divided,
+/// `TimeSeries` objects are intended to be added, multiplied, subtracted and divided,
 /// using pairwise arithmetic operations to every element across the timeline. For
 /// this to work there are some requirements:
-/// * the underlying value types must be the same in both TimeSeries objects. For
+/// * the underlying value types must be the same in both `TimeSeries` objects. For
 /// example, you cannot add integers to floats)
 /// * the underlying value type must support the arithmetic operation. For example,
-/// you cannot divide Strings and so you cannot divide TimeSeries of Strings
-/// * the timelines of the two TimeSeries objects must be the same. This would not
+/// you cannot divide Strings and so you cannot divide `TimeSeries` of Strings
+/// * the timelines of the two `TimeSeries` objects must be the same. This would not
 /// normally be a problem in a common model where there is a single timeline for
 /// the entire model
 ///
 /// It's also worth noting that these arithmetic operations have been implemented
-/// on references to TimeSeries only. This is required as TimeSeries cannot implement
+/// on references to `TimeSeries` only. This is required as `TimeSeries` cannot implement
 /// the `Copy` trait, due it's wrapping of a vector, which does not implement the
 /// `Copy` trait. Without the `Copy` trait, all the arithmetic operations, and in fact
 /// any function call, move the operands. This would mean that after `let c = a + b;`
@@ -52,18 +51,19 @@ where
 {
     // region: constructors
 
-    /// Internal method to create a new TimeSeries object
+    /// Internal method to create a new `TimeSeries` object
     ///
     /// Does not check that the  timeline and the values match in
-    /// length. This is a fundamental requirement for TimeSeries
+    /// length. This is a fundamental requirement for `TimeSeries`
     /// objects to be well formed, so restricting this to be an internal
     /// method only
     fn new_unchecked(timeline: &'tl Timeline, values: Vec<T>) -> Self {
         TimeSeries { timeline, values }
     }
 
-    /// Create a new TimeSeries object
+    /// Create a new `TimeSeries` object
     ///
+    /// # Errors
     /// This method will throw an error if the length of the timeline provided and the
     /// length of the value vector do not match
     pub fn new(timeline: &'tl Timeline, values: Vec<T>) -> Result<Self, TimeSeriesError> {
@@ -73,17 +73,17 @@ where
         Ok(TimeSeries::new_unchecked(timeline, values))
     }
 
-    /// Create a new TimeSeries object with a partial
+    /// Create a new `TimeSeries` object with a partial
     /// specification of the input values. The method will
     /// pad out values either side of the provided values to
-    /// ensure that the TimeSeries is properly formed.
+    /// ensure that the `TimeSeries` is properly formed.
     ///
     /// If the values, after the start offset, do not fit within
     /// the timeline the rightmost values will be silently discarded.
     /// In extremis, if the start index provided is greater than the
-    /// timeline, then the returned TimeSeries will only contain the
+    /// timeline, then the returned `TimeSeries` will only contain the
     /// pad values and none of the values vector will remain
-    pub fn new_partial(timeline: &'tl Timeline, start: usize, values: Vec<T>, pad: T) -> Self {
+    pub fn new_partial(timeline: &'tl Timeline, start: usize, values: &Vec<T>, pad: T) -> Self {
         let mut data;
         // If start is after the timeline then just return a vector full of the pad value
         if start >= timeline.len {
@@ -120,64 +120,49 @@ where
 
     // region: shift
 
-    /// Shift the TimeSeries by a fixed duration. Intened to use values in
+    /// Shift the `TimeSeries` by a fixed duration. Intened to use values in
     /// different periods e.g. operate on value from 6 months ago.
     ///
     /// This operation will be lossy in the sense that some values will be
     /// shifted off the end of the timeline, and will get discarded. On the
     /// other side, new values will be brought into scope, which is what the
     /// pad value is required for
+    ///
+    /// # Errors
+    /// This method will throw an error if the provided shift doesn't fir with
+    /// the periodicity of the timeline (e.g. a quarterly timeline can only be
+    /// shifted in years and months in mulitples of 3)
     pub fn shift(&self, shift: Duration, pad: T) -> Result<Self, TimeSeriesError> {
         let shift_len = match self.timeline.periodicity {
             Period::Year => {
                 if shift.days() > 0 || shift.months() > 0 {
-                    return Err(TimeSeriesError::BadShift(Period::Year));
+                    return Err(TimeSeriesError::BadShift(self.timeline.periodicity));
                 }
-                match shift.years() {
-                    l if l < 0 => cmp::min(-l as usize, self.values.len()),
-                    l if l > 0 => cmp::min(l as usize, self.values.len()),
-                    _ => 0,
-                }
+                self.prep_shift(shift.years())?
             }
             Period::Quarter => {
                 if shift.days() > 0 || shift.months() % 3 > 0 {
-                    return Err(TimeSeriesError::BadShift(Period::Year));
+                    return Err(TimeSeriesError::BadShift(self.timeline.periodicity));
                 }
-                match shift.years() * 4 + shift.months() / 3 {
-                    l if l < 0 => cmp::min(-l as usize, self.values.len()),
-                    l if l > 0 => cmp::min(l as usize, self.values.len()),
-                    _ => 0,
-                }
+                self.prep_shift(shift.years() * 4 + shift.months() / 3)?
             }
             Period::Month => {
                 if shift.days() > 0 {
-                    return Err(TimeSeriesError::BadShift(Period::Year));
+                    return Err(TimeSeriesError::BadShift(self.timeline.periodicity));
                 }
-                match shift.years() * 12 + shift.months() {
-                    l if l < 0 => cmp::min(-l as usize, self.values.len()),
-                    l if l > 0 => cmp::min(l as usize, self.values.len()),
-                    _ => 0,
-                }
+                self.prep_shift(shift.years() * 12 + shift.months())?
             }
             Period::Week => {
                 if shift.years() > 0 || shift.months() > 0 || shift.days() % 7 > 0 {
-                    return Err(TimeSeriesError::BadShift(Period::Year));
+                    return Err(TimeSeriesError::BadShift(self.timeline.periodicity));
                 }
-                match shift.days() / 7 {
-                    l if l < 0 => cmp::min(-l as usize, self.values.len()),
-                    l if l > 0 => cmp::min(l as usize, self.values.len()),
-                    _ => 0,
-                }
+                self.prep_shift(shift.days() / 7)?
             }
             Period::Day => {
                 if shift.years() > 0 || shift.months() > 0 {
-                    return Err(TimeSeriesError::BadShift(Period::Year));
+                    return Err(TimeSeriesError::BadShift(self.timeline.periodicity));
                 }
-                match shift.days() {
-                    l if l < 0 => cmp::min(-l as usize, self.values.len()),
-                    l if l > 0 => cmp::min(l as usize, self.values.len()),
-                    _ => 0,
-                }
+                self.prep_shift(shift.days())?
             }
         };
         let mut data = Vec::with_capacity(self.values.len());
@@ -194,10 +179,24 @@ where
         Ok(ts)
     }
 
+    fn prep_shift(&self, shift: i32) -> Result<usize, TimeSeriesError> {
+        let sh = shift.checked_abs();
+        let sh = if let Some(i) = sh {
+            i
+        } else {
+            return Err(TimeSeriesError::BadShift(Period::Year));
+        };
+        if let Ok(i) = usize::try_from(sh) {
+            Ok(cmp::min(i, self.values.len()))
+        } else {
+            Err(TimeSeriesError::BadShift(self.timeline.periodicity))
+        }
+    }
     // endregion shift
 
     // region: getters
     /// Return timeseries value at date
+    #[must_use]
     pub fn value(&self, date: Date) -> Option<&T> {
         let i = self.timeline.index_at(date)?;
         self.values.get(i as usize)
@@ -207,6 +206,7 @@ where
     /// for the values that span the given date range. Note that
     /// the whole of the supplied date range must lie within the
     /// timeline of the `TimeSeries` or rhis will return `None`
+    #[must_use]
     pub fn value_range(&self, dr: DateRange) -> Option<&[T]> {
         let start = self.timeline.index_at(dr.from())? as usize;
         let end = self.timeline.index_at(dr.last_day())? as usize;
@@ -218,10 +218,37 @@ where
 // region: change_periodicity
 // TODO: can we do this for other types as well?
 impl<'tl> TimeSeries<'tl, f64> {
+    /// Changes the perioidicty of a `TimeSeries` from one
+    /// time basis to another. For example, one might want
+    /// to take a daily time series but transform it to
+    /// it's quarterly equivalent.
+    ///
+    /// In order to do this the transform must be provided.
+    /// Most simple is additive, so in the case of a cashflow
+    /// quarterly information summarised as yearly will
+    /// just add the value for the 4 quarters of the year
+    /// together.
+    ///
+    /// No further aggregation types have currebntly been
+    /// implemented, but other valid options might be period end
+    /// (for things like balances) or average.
+    ///
+    /// # Errors
+    /// There are two types of error that can be returned:
+    ///
+    /// 1) If the bounds of the target timeline (i.e. the
+    /// start and end dates) do not match the source timeline
+    /// then an erro will be thrown as we're not just changing
+    /// periodicity but also chaning the size of the timeline
+    /// & this function can't opine on that
+    ///
+    /// 2) Only the add agregtaion type has been implemented
+    /// so far, so any other type of aggregation will throw
+    /// an error
     pub fn change_periodicity(
         &self,
         timeline: &'tl Timeline,
-        transform: AggType,
+        transform: &AggType,
     ) -> Result<Self, TimeSeriesError> {
         if timeline.range != self.timeline.range {
             return Err(TimeSeriesError::TimelinesDoNotMatch);
@@ -241,7 +268,7 @@ impl<'tl> TimeSeries<'tl, f64> {
         }
     }
 
-    /// Internal method to change the periodicity of a TimeSeries object
+    /// Internal method to change the periodicity of a `TimeSeries` object
     /// from a smaller time period to a bigger one, i.e. weeks to quarters
     /// using addition as the aggregation method
     fn add_up(&self, target_timeline: &'tl Timeline) -> Self {
@@ -289,7 +316,7 @@ impl<'tl> TimeSeries<'tl, f64> {
         TimeSeries::new_unchecked(target_timeline, data)
     }
 
-    /// Internal method to change the periodicity of a TimeSeries object
+    /// Internal method to change the periodicity of a `TimeSeries` object
     /// from a bigger time period to a smaller one, i.e. years to months
     /// using addition as the aggregation method. Since we're increasing
     /// the number of time periods it will be inferred that the target
@@ -308,7 +335,7 @@ impl<'tl> TimeSeries<'tl, f64> {
         let mut val_end = 0.0;
 
         // TODO: This still treats the final target period as fully fitting within the source period
-        // Only affects weeks but there's the possibility that the final period is a wekk of only 2
+        // Only affects weeks but there's the possibility that the final period is a week of only 2
         // days and ideally this period would only hold 2/7 of the value from the period that preceeds it
         for (source_range, source_val) in source_iter.zip(self.values.iter()) {
             // Count through the target ranges until we have spanned the current source range
@@ -327,7 +354,10 @@ impl<'tl> TimeSeries<'tl, f64> {
                     part_end = true;
                 }
             }
-            let val = source_val / (i as f64 + res_start + res_end);
+            // I am so confident the periods won't overflow u32, I'm coding in a hard-coded reversion to 1
+            // This is possibly evil and future people reading this may judge me, so be it
+            let size = f64::from(u32::try_from(i).unwrap_or(1));
+            let val = source_val / (size + res_start + res_end);
             if part_start {
                 data.push(val_end + val * res_start);
             }
@@ -378,9 +408,10 @@ where
 {
     /// Change underlying data series into 64-bit float type. The source type has to
     /// be capable of beinng converted e.e. won't work on String
+    #[must_use]
     pub fn cast_f64(&self) -> TimeSeries<'tl, f64> {
         let mut data = Vec::with_capacity(self.values.len());
-        for val in self.values.iter() {
+        for val in &self.values {
             let v = *val;
             data.push(v.into());
         }
@@ -392,9 +423,10 @@ impl<'tl, T> TimeSeries<'tl, T>
 where
     T: Copy + Into<i32>,
 {
+    #[must_use]
     pub fn cast_i32(&self) -> TimeSeries<'tl, i32> {
         let mut data = Vec::with_capacity(self.values.len());
-        for val in self.values.iter() {
+        for val in &self.values {
             let v = *val;
             data.push(v.into());
         }
@@ -405,7 +437,8 @@ where
 
 // region: empty_constuctors
 impl<'tl> TimeSeries<'tl, i32> {
-    /// For a given timline, create a TimeSeries of 32-bit integers, all with value 0
+    /// For a given timline, create a `TimeSeries` of 32-bit integers, all with value 0
+    #[must_use]
     pub fn empty_i(timeline: &'tl Timeline) -> TimeSeries<'tl, i32> {
         let values = vec![0; timeline.len];
         TimeSeries::new_unchecked(timeline, values)
@@ -413,7 +446,8 @@ impl<'tl> TimeSeries<'tl, i32> {
 }
 
 impl<'tl> TimeSeries<'tl, f64> {
-    /// For a given timline, create a TimeSeries of 64-bit floats, all with value 0
+    /// For a given timline, create a `TimeSeries` of 64-bit floats, all with value 0
+    #[must_use]
     pub fn empty_f(timeline: &'tl Timeline) -> TimeSeries<'tl, f64> {
         let values = vec![0.0; timeline.len];
         TimeSeries::new_unchecked(timeline, values)
@@ -432,7 +466,7 @@ impl<'tl, T> TimeSeries<'tl, T> {
     /// of two time series
     ///
     /// Note that for simple artihmetic operations (+, -, *, /) these operators are already
-    /// directly defined for the TimeSeries object, so that as long as you can apply the
+    /// directly defined for the `TimeSeries` object, so that as long as you can apply the
     /// arithmetic operation on the underlying value type (e.g. you can't divide Strings)
     /// then you will be able to write something like this: `ts3 = &ts1 + &ts2;` or
     /// `ts3 = &ts1 + 10;`
@@ -471,6 +505,14 @@ impl<'tl, T> TimeSeries<'tl, T> {
     /// assert_eq!(ts3.value_range(dr).unwrap(), vec![1, 1, 8, 9]);
     ///
     /// ```
+    ///
+    /// # Errors
+    /// If the timelines of the two time series do not match this function
+    /// will return an error. Align them before calling this.
+    ///
+    /// It can also techincally error if the internal creation of the new
+    /// values array doesn't match the source timelines but I don't think
+    /// this can ever happen
     pub fn apply<F>(
         &self,
         other: &TimeSeries<'tl, T>,
@@ -534,6 +576,14 @@ impl<'tl, T> TimeSeries<'tl, T> {
     /// assert_eq!(ts3.value_range(dr).unwrap(), vec![1, 1, 8, 9, 1, 1000, 12, 13]);
     ///
     /// ```
+    ///
+    /// # Errors
+    /// If the timelines of the two time series do not match this function
+    /// will return an error. Align them before calling this.
+    ///
+    /// It can also techincally error if the internal creation of the new
+    /// values array doesn't match the source timelines but I don't think
+    /// this can ever happen
     pub fn apply_with_time<F>(
         &self,
         other: &TimeSeries<'tl, T>,
@@ -764,7 +814,8 @@ where
     type Item = (DateRange, T);
 
     fn next(&mut self) -> Option<Self::Item> {
-        let dr = self.timeline.index(self.index as i32)?;
+        let idx = i32::try_from(self.index).ok()?;
+        let dr = self.timeline.index(idx)?;
         let val = self.values.get(self.index)?;
         let val = val.clone();
         self.index += 1;
@@ -809,6 +860,7 @@ impl<'dat, T> Iterator for Iter<'dat, T> {
 }
 
 impl<'tl, 'dat, T> TimeSeries<'tl, T> {
+    #[must_use]
     pub fn iter(&'dat self) -> Iter<'dat, T> {
         Iter {
             timeline: Some(*self.timeline),
@@ -840,7 +892,7 @@ impl<'dat, T> Iterator for IterMut<'dat, T> {
         let (dr_head, dr_tail) = self.timeline?.split_first();
         let dr = dr_head?;
         self.timeline = dr_tail;
-        let values = mem::replace(&mut self.values, &mut []);
+        let values = std::mem::take(&mut self.values);
         let (val, tail) = values.split_first_mut()?;
         self.values = tail;
         Some((dr, val))
@@ -872,10 +924,41 @@ impl<'tl, 'b, T> TimeSeries<'tl, T>
 where
     T: 'b + Sum<&'b T>,
 {
+    #[must_use]
     pub fn sum(&'b self) -> T {
         self.into_iter().map(|(_, v)| v).sum::<T>()
     }
 
+    /// Takes a pair of `Timeseries` and pairwise multiplies
+    /// each pair of values and then sums the resulting array
+    /// ---
+    /// ### Example
+    /// ```
+    /// use timeseries::{TimeSeries, Timeline, DateRange, Period, Duration};
+    /// use time::{Date, Month};
+    ///
+    /// // Create a timeline
+    /// let from = Date::from_calendar_date(2022, Month::January, 10).unwrap();
+    /// let to = Date::from_calendar_date(2023, Month::January, 10).unwrap();
+    /// let dr = DateRange::new(from, to);
+    /// let tl = Timeline::new(dr, Period::Quarter);
+    ///
+    /// // Create two timeseries
+    /// let v1 = vec![1, 2, 3, 4];
+    /// let ts1 = TimeSeries::new(&tl, v1).unwrap();
+    /// let v2 = vec![5, 6, 7, 8];
+    /// let ts2 = TimeSeries::new(&tl, v2).unwrap();
+    ///
+    /// let res = ts1.sum_product(&ts2).unwrap();
+    /// assert_eq!(res, (1 * 5) + (2 * 6) + (3 * 7) + (4 * 8));
+    /// assert_eq!(res, 5 + 12 + 21 + 32);
+    /// assert_eq!(res, 70);
+    ///
+    /// ```
+    ///
+    /// # Errors
+    /// Will return an error if the two `Timeseries` do not
+    /// share the same timeline
     pub fn sum_product(&self, other: &TimeSeries<'tl, T>) -> Result<T, TimeSeriesError>
     where
         T: Mul + Mul<Output = T> + Copy + Sum<T>,
@@ -947,22 +1030,22 @@ mod tests {
 
         // Begining
         let mut v = vec![1, 2, 3, 4];
-        let mut ts = TimeSeries::new_partial(&tl, 0, v, 0);
+        let mut ts = TimeSeries::new_partial(&tl, 0, &v, 0);
         assert_eq!(ts.values, vec![1, 2, 3, 4, 0, 0, 0, 0, 0, 0, 0, 0]);
 
         // Middle
         v = vec![1, 2, 3, 4];
-        ts = TimeSeries::new_partial(&tl, 3, v, 0);
+        ts = TimeSeries::new_partial(&tl, 3, &v, 0);
         assert_eq!(ts.values, vec![0, 0, 0, 1, 2, 3, 4, 0, 0, 0, 0, 0]);
 
         // Part-overflow at end
         v = vec![1, 2, 3, 4];
-        ts = TimeSeries::new_partial(&tl, 10, v, 0);
+        ts = TimeSeries::new_partial(&tl, 10, &v, 0);
         assert_eq!(ts.values, vec![0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2]);
 
         // Total Overflow
         v = vec![1, 2, 3, 4];
-        ts = TimeSeries::new_partial(&tl, 12, v, 0);
+        ts = TimeSeries::new_partial(&tl, 12, &v, 0);
         assert_eq!(ts.values, vec![0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
     }
 
@@ -990,13 +1073,13 @@ mod tests {
         let indexation_factor: f64 = f64::powf(1.08, 0.25);
         let op = |_t: DateRange, a: f64| -> f64 { a * indexation_factor };
         let ts = TimeSeries::new_generator(&tl, 1.0, op);
-        assert!((ts.values[0] - 1.01942655).abs() < 1e-5);
-        assert!((ts.values[1] - 1.03923048).abs() < 1e-5);
-        assert!((ts.values[2] - 1.05941914).abs() < 1e-5);
+        assert!((ts.values[0] - 1.019_426_55).abs() < 1e-5);
+        assert!((ts.values[1] - 1.039_230_48).abs() < 1e-5);
+        assert!((ts.values[2] - 1.059_419_14).abs() < 1e-5);
         assert!((ts.values[3] - 1.08).abs() < 1e-5);
-        assert!((ts.values[4] - 1.10098067).abs() < 1e-5);
-        assert!((ts.values[5] - 1.12236892).abs() < 1e-5);
-        assert!((ts.values[6] - 1.14417268).abs() < 1e-5);
+        assert!((ts.values[4] - 1.100_980_67).abs() < 1e-5);
+        assert!((ts.values[5] - 1.122_368_92).abs() < 1e-5);
+        assert!((ts.values[6] - 1.144_172_68).abs() < 1e-5);
         assert!((ts.values[7] - 1.1664).abs() < 1e-5);
     }
 
@@ -1117,6 +1200,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::similar_names)]
     fn change_periodicity_error() {
         // Create a date range
         let from = Date::from_calendar_date(2022, Month::January, 1).unwrap();
@@ -1133,25 +1217,26 @@ mod tests {
         let tl2 = Timeline::new(dr2, Period::Month);
 
         // Test a different date range errors
-        let mut tse = ts1.change_periodicity(&tl2, AggType::Add);
+        let mut tse = ts1.change_periodicity(&tl2, &AggType::Add);
         assert!(tse.is_err());
 
         // Test same timeline just clones
         let tl3 = Timeline::new(dr, Period::Quarter);
-        let mut ts4 = ts1.change_periodicity(&tl3, AggType::Add).unwrap();
+        let mut ts4 = ts1.change_periodicity(&tl3, &AggType::Add).unwrap();
         assert_eq!(ts4.values, ts1.values);
         ts4.update((from, 100.0));
         assert_ne!(ts4.values, ts1.values);
 
         // Test with not implemented aggreation types
         let tl4 = Timeline::new(dr, Period::Month);
-        tse = ts1.change_periodicity(&tl4, AggType::Mean);
+        tse = ts1.change_periodicity(&tl4, &AggType::Mean);
         assert!(tse.is_err());
-        tse = ts1.change_periodicity(&tl4, AggType::Linear);
+        tse = ts1.change_periodicity(&tl4, &AggType::Linear);
         assert!(tse.is_err());
     }
 
     #[test]
+    #[allow(clippy::similar_names, clippy::too_many_lines)]
     fn change_periodicity_add_up_f64() {
         // Create a date range
         let from = Date::from_calendar_date(2022, Month::January, 1).unwrap();
@@ -1170,7 +1255,7 @@ mod tests {
         let mut ts1 = TimeSeries::new(&tl1, v).unwrap().cast_f64();
 
         // Test quarters to years
-        let mut ts2 = ts1.change_periodicity(&tly, AggType::Add).unwrap();
+        let mut ts2 = ts1.change_periodicity(&tly, &AggType::Add).unwrap();
         assert_eq!(ts2.values, vec![10.0, 26.0]);
 
         // Create a monthly timeseries
@@ -1181,11 +1266,11 @@ mod tests {
         ts1 = TimeSeries::new(&tl2, v).unwrap().cast_f64();
 
         // Test months to years
-        ts2 = ts1.change_periodicity(&tly, AggType::Add).unwrap();
+        ts2 = ts1.change_periodicity(&tly, &AggType::Add).unwrap();
         assert_eq!(ts2.values, vec![78.0, 222.0]);
 
         // Test months to quarters
-        ts2 = ts1.change_periodicity(&tlq, AggType::Add).unwrap();
+        ts2 = ts1.change_periodicity(&tlq, &AggType::Add).unwrap();
         assert_eq!(
             ts2.values,
             vec![6.0, 15.0, 24.0, 33.0, 42.0, 51.0, 60.0, 69.0]
@@ -1200,47 +1285,47 @@ mod tests {
         ts1 = TimeSeries::new(&tl3, v).unwrap().cast_f64();
 
         // Test weeks to years
-        ts2 = ts1.change_periodicity(&tly, AggType::Add).unwrap();
-        assert!((ts2.values[0] - 1333.428571).abs() < 1e-5);
-        assert!((ts2.values[1] - 4126.571429).abs() < 1e-5);
+        ts2 = ts1.change_periodicity(&tly, &AggType::Add).unwrap();
+        assert!((ts2.values[0] - 1_333.428_571).abs() < 1e-5);
+        assert!((ts2.values[1] - 4_126.571_429).abs() < 1e-5);
 
         // Test weeks to quarters
-        ts2 = ts1.change_periodicity(&tlq, AggType::Add).unwrap();
-        assert!((ts2.values[0] - 76.28571429).abs() < 1e-5);
-        assert!((ts2.values[1] - 245.1428571).abs() < 1e-5);
-        assert!((ts2.values[2] - 419.5714286).abs() < 1e-5);
-        assert!((ts2.values[3] - 592.4285714).abs() < 1e-5);
-        assert!((ts2.values[4] - 746.5714286).abs() < 1e-5);
+        ts2 = ts1.change_periodicity(&tlq, &AggType::Add).unwrap();
+        assert!((ts2.values[0] - 76.285_714_29).abs() < 1e-5);
+        assert!((ts2.values[1] - 245.142_857_1).abs() < 1e-5);
+        assert!((ts2.values[2] - 419.571_428_6).abs() < 1e-5);
+        assert!((ts2.values[3] - 592.428_571_4).abs() < 1e-5);
+        assert!((ts2.values[4] - 746.571_428_6).abs() < 1e-5);
         assert!((ts2.values[5] - 923.0).abs() < 1e-5);
         assert!((ts2.values[6] - 1105.0).abs() < 1e-5);
         assert!((ts2.values[7] - 1352.0).abs() < 1e-5);
 
         // Test weeks to months
-        ts2 = ts1.change_periodicity(&tlm, AggType::Add).unwrap();
-        assert!((ts2.values[0] - 7.714285714).abs() < 1e-5);
-        assert!((ts2.values[1] - 23.71428571).abs() < 1e-5);
-        assert!((ts2.values[2] - 44.85714286).abs() < 1e-5);
-        assert!((ts2.values[3] - 62.14285714).abs() < 1e-5);
-        assert!((ts2.values[4] - 83.57142857).abs() < 1e-5);
-        assert!((ts2.values[5] - 99.42857143).abs() < 1e-5);
-        assert!((ts2.values[6] - 122.1428571).abs() < 1e-5);
-        assert!((ts2.values[7] - 141.7142857).abs() < 1e-5);
-        assert!((ts2.values[8] - 155.7142857).abs() < 1e-5);
-        assert!((ts2.values[9] - 180.4285714).abs() < 1e-5);
-        assert!((ts2.values[10] - 193.1428571).abs() < 1e-5);
-        assert!((ts2.values[11] - 218.8571429).abs() < 1e-5);
-        assert!((ts2.values[12] - 238.5714286).abs() < 1e-5);
-        assert!((ts2.values[13] - 232.2857143).abs() < 1e-5);
-        assert!((ts2.values[14] - 275.7142857).abs() < 1e-5);
-        assert!((ts2.values[15] - 285.7142857).abs() < 1e-5);
-        assert!((ts2.values[16] - 314.4285714).abs() < 1e-5);
-        assert!((ts2.values[17] - 322.8571429).abs() < 1e-5);
-        assert!((ts2.values[18] - 353.1428571).abs() < 1e-5);
-        assert!((ts2.values[19] - 372.5714286).abs() < 1e-5);
-        assert!((ts2.values[20] - 379.2857143).abs() < 1e-5);
-        assert!((ts2.values[21] - 411.2857143).abs() < 1e-5);
-        assert!((ts2.values[22] - 416.5714286).abs() < 1e-5);
-        assert!((ts2.values[23] - 524.1428571).abs() < 1e-5);
+        ts2 = ts1.change_periodicity(&tlm, &AggType::Add).unwrap();
+        assert!((ts2.values[0] - 7.714_285_714).abs() < 1e-5);
+        assert!((ts2.values[1] - 23.714_285_71).abs() < 1e-5);
+        assert!((ts2.values[2] - 44.857_142_86).abs() < 1e-5);
+        assert!((ts2.values[3] - 62.142_857_14).abs() < 1e-5);
+        assert!((ts2.values[4] - 83.571_428_57).abs() < 1e-5);
+        assert!((ts2.values[5] - 99.428_571_43).abs() < 1e-5);
+        assert!((ts2.values[6] - 122.142_857_1).abs() < 1e-5);
+        assert!((ts2.values[7] - 141.714_285_7).abs() < 1e-5);
+        assert!((ts2.values[8] - 155.714_285_7).abs() < 1e-5);
+        assert!((ts2.values[9] - 180.428_571_4).abs() < 1e-5);
+        assert!((ts2.values[10] - 193.142_857_1).abs() < 1e-5);
+        assert!((ts2.values[11] - 218.857_142_9).abs() < 1e-5);
+        assert!((ts2.values[12] - 238.571_428_6).abs() < 1e-5);
+        assert!((ts2.values[13] - 232.285_714_3).abs() < 1e-5);
+        assert!((ts2.values[14] - 275.714_285_7).abs() < 1e-5);
+        assert!((ts2.values[15] - 285.714_285_7).abs() < 1e-5);
+        assert!((ts2.values[16] - 314.428_571_4).abs() < 1e-5);
+        assert!((ts2.values[17] - 322.857_142_9).abs() < 1e-5);
+        assert!((ts2.values[18] - 353.142_857_1).abs() < 1e-5);
+        assert!((ts2.values[19] - 372.571_428_6).abs() < 1e-5);
+        assert!((ts2.values[20] - 379.285_714_3).abs() < 1e-5);
+        assert!((ts2.values[21] - 411.285_714_3).abs() < 1e-5);
+        assert!((ts2.values[22] - 416.571_428_6).abs() < 1e-5);
+        assert!((ts2.values[23] - 524.142_857_1).abs() < 1e-5);
 
         // Create a daily timeseries
         let tl4 = Timeline::new(dr, Period::Day);
@@ -1251,18 +1336,18 @@ mod tests {
         ts1 = TimeSeries::new(&tl4, v).unwrap().cast_f64();
 
         // Test days to years
-        ts2 = ts1.change_periodicity(&tly, AggType::Add).unwrap();
-        assert_eq!(ts2.values, vec![66430.0, 199655.0]);
+        ts2 = ts1.change_periodicity(&tly, &AggType::Add).unwrap();
+        assert_eq!(ts2.values, vec![66430.0, 199_655.0]);
 
         // Test days to quarters
-        ts2 = ts1.change_periodicity(&tlq, AggType::Add).unwrap();
+        ts2 = ts1.change_periodicity(&tlq, &AggType::Add).unwrap();
         assert_eq!(
             ts2.values,
             vec![4005.0, 12285.0, 20838.0, 29302.0, 36855.0, 45500.0, 54418.0, 62882.0]
         );
 
         // Test days to months
-        ts2 = ts1.change_periodicity(&tlm, AggType::Add).unwrap();
+        ts2 = ts1.change_periodicity(&tlm, &AggType::Add).unwrap();
         assert_eq!(
             ts2.values,
             vec![
@@ -1273,7 +1358,7 @@ mod tests {
         );
 
         // Test days to weeks
-        ts2 = ts1.change_periodicity(&tlw, AggType::Add).unwrap();
+        ts2 = ts1.change_periodicity(&tlw, &AggType::Add).unwrap();
         assert_eq!(
             ts2.values,
             vec![
@@ -1293,6 +1378,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::similar_names)]
     fn change_periodicity_add_down_f64() {
         // Create a date range
         let from = Date::from_calendar_date(2022, Month::January, 1).unwrap();
@@ -1311,33 +1397,48 @@ mod tests {
         let ts1 = TimeSeries::new(&tl1, v).unwrap().cast_f64();
 
         // Test years to quarters
-        let mut ts2 = ts1.change_periodicity(&tlq, AggType::Add).unwrap();
-        assert!((ts2.values[0] - 0.25).abs() < 1e-10);
-        assert!((ts2.values[3] - 0.25).abs() < 1e-10);
-        assert!((ts2.values[4] - 0.5).abs() < 1e-10);
-        assert!((ts2.values[7] - 0.5).abs() < 1e-10);
+        let mut ts2 = ts1.change_periodicity(&tlq, &AggType::Add).unwrap();
+        let mut val: f64 = 1.0 / 4.0;
+        assert!((ts2.values[0] - val).abs() < f64::EPSILON);
+        assert!((ts2.values[3] - val).abs() < f64::EPSILON);
+        val = 2.0 / 4.0;
+        assert!((ts2.values[4] - val).abs() < f64::EPSILON);
+        assert!((ts2.values[7] - val).abs() < f64::EPSILON);
 
         // Test years to months
-        ts2 = ts1.change_periodicity(&tlm, AggType::Add).unwrap();
-        assert!((ts2.values[0] - 0.083333333333).abs() < 1e-10);
-        assert!((ts2.values[11] - 0.083333333333).abs() < 1e-10);
-        assert!((ts2.values[12] - 0.166666666666).abs() < 1e-10);
-        assert!((ts2.values[23] - 0.166666666666).abs() < 1e-10);
+        ts2 = ts1.change_periodicity(&tlm, &AggType::Add).unwrap();
+        val = 1.0 / 12.0;
+        assert!((ts2.values[0] - val).abs() < f64::EPSILON);
+        assert!((ts2.values[11] - val).abs() < f64::EPSILON);
+        val = 2.0 / 12.0;
+        assert!((ts2.values[12] - val).abs() < f64::EPSILON);
+        assert!((ts2.values[23] - val).abs() < f64::EPSILON);
 
         // Test years to weeks
-        ts2 = ts1.change_periodicity(&tlw, AggType::Add).unwrap();
-        assert!((ts2.values[0] - 0.019178082192).abs() < 1e-10);
-        assert!((ts2.values[51] - 0.019178082192).abs() < 1e-10);
-        assert!((ts2.values[52] - 0.035172158460).abs() < 1e-10);
-        assert!((ts2.values[53] - 0.037837837838).abs() < 1e-10);
-        assert!((ts2.values[104] - 0.037837837838).abs() < 1e-10);
+        ts2 = ts1.change_periodicity(&tlw, &AggType::Add).unwrap();
+        val = 1.0 / (52.0 + (1.0 / 7.0));
+        assert!((ts2.values[0] - val).abs() < f64::EPSILON);
+        assert!((ts2.values[51] - val).abs() < f64::EPSILON);
+        // TODO: Note this is an error and is overstating the size of the final year
+        // See TODO in add-Up above
+        // The commented line below is the correct amount
+        let val2 = 2.0 / ((6.0 / 7.0) + 52.0);
+        //let val2 = 2.0 / ((6.0 / 7.0) + 51.0 + (2.0 / 7.0));
+        val = val * (1.0 / 7.0) + val2 * (6.0 / 7.0);
+        println!("{} .. {}", ts2.values[52], val);
+        assert!((ts2.values[52] - val).abs() < f64::EPSILON);
+        val = val2;
+        assert!((ts2.values[53] - val).abs() < f64::EPSILON);
+        assert!((ts2.values[104] - val).abs() < f64::EPSILON);
 
         // Test years to days
-        ts2 = ts1.change_periodicity(&tld, AggType::Add).unwrap();
-        assert!((ts2.values[0] - 0.002739726027).abs() < 1e-10);
-        assert!((ts2.values[364] - 0.002739726027).abs() < 1e-10);
-        assert!((ts2.values[365] - 0.005479452055).abs() < 1e-10);
-        assert!((ts2.values[729] - 0.005479452055).abs() < 1e-10);
+        ts2 = ts1.change_periodicity(&tld, &AggType::Add).unwrap();
+        val = 1.0 / 365.0;
+        assert!((ts2.values[0] - val).abs() < f64::EPSILON);
+        assert!((ts2.values[364] - val).abs() < f64::EPSILON);
+        val = 2.0 / 365.0;
+        assert!((ts2.values[365] - val).abs() < f64::EPSILON);
+        assert!((ts2.values[729] - val).abs() < f64::EPSILON);
 
         // TODO: test from other periodicity than years ... maybe
     }
@@ -1419,6 +1520,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::similar_names)]
     fn shift_years() {
         // Create a timeline
         let from = Date::from_calendar_date(2022, Month::January, 10).unwrap();
@@ -1472,6 +1574,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::similar_names)]
     fn shift_quarters() {
         // Create a timeline
         let from = Date::from_calendar_date(2022, Month::January, 10).unwrap();
@@ -1530,6 +1633,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::similar_names)]
     fn shift_months() {
         // Create a timeline
         let from = Date::from_calendar_date(2022, Month::January, 10).unwrap();
@@ -1597,6 +1701,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::similar_names)]
     fn shift_weeks() {
         // Create a timeline
         let from = Date::from_calendar_date(2022, Month::January, 10).unwrap();
@@ -1655,6 +1760,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::similar_names)]
     fn shift_days() {
         // Create a timeline
         let from = Date::from_calendar_date(2022, Month::February, 25).unwrap();
@@ -1708,6 +1814,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::similar_names)]
     fn apply() {
         // Create a timeline
         let from = Date::from_calendar_date(2022, Month::January, 10).unwrap();
@@ -1777,6 +1884,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::similar_names)]
     fn apply_with_time() {
         // Create a timeline
         let from = Date::from_calendar_date(2022, Month::January, 1).unwrap();
@@ -1818,6 +1926,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::similar_names)]
     fn add_timeseries() {
         // Create a timeline
         let from = Date::from_calendar_date(2022, Month::January, 10).unwrap();
@@ -1873,6 +1982,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::similar_names)]
     fn add_static() {
         // Create a timeline
         let from = Date::from_calendar_date(2022, Month::January, 10).unwrap();
@@ -1902,6 +2012,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::similar_names)]
     fn sub_timeseries() {
         // Create a timeline
         let from = Date::from_calendar_date(2022, Month::January, 10).unwrap();
@@ -1953,10 +2064,14 @@ mod tests {
         let ts12 = &ts10 - &ts11;
         assert!(ts12.is_ok());
         let ts12 = ts12.unwrap();
-        assert!((ts12.values[0] as f64 + 1.6).abs() < 1e-10);
-        assert!((ts12.values[1] as f64 - 1000.6).abs() < 1e-10);
-        assert!((ts12.values[2] as f64 + 4.4999).abs() < 1e-10);
-        assert!((ts12.values[3] as f64 - 3.5).abs() < 1e-10);
+        let mut val = 1.2 - 2.8;
+        assert!((ts12.values[0] as f64 - val).abs() < f64::EPSILON);
+        val = 1000.6 - 0.0;
+        assert!((ts12.values[1] as f64 - val).abs() < f64::EPSILON);
+        val = 0.0001 - 4.5;
+        assert!((ts12.values[2] as f64 - val).abs() < f64::EPSILON);
+        val = 3.0 + 0.5;
+        assert!((ts12.values[3] as f64 - val).abs() < f64::EPSILON);
     }
 
     #[test]
@@ -1985,13 +2100,14 @@ mod tests {
         let v10 = vec![1.2, 1000.6, 0.0001, 3.0];
         let ts10 = TimeSeries::new(&tl, v10).unwrap();
         let ts12 = &ts10 - 1.0;
-        assert!((ts12.values[0] as f64 - 0.2).abs() < 1e-10);
-        assert!((ts12.values[1] as f64 - 999.6).abs() < 1e-10);
-        assert!((ts12.values[2] as f64 + 0.9999).abs() < 1e-10);
-        assert!((ts12.values[3] as f64 - 2.0).abs() < 1e-10);
+        assert!((ts12.values[0] as f64 - 0.2).abs() < f64::EPSILON);
+        assert!((ts12.values[1] as f64 - 999.6).abs() < f64::EPSILON);
+        assert!((ts12.values[2] as f64 + 0.9999).abs() < f64::EPSILON);
+        assert!((ts12.values[3] as f64 - 2.0).abs() < f64::EPSILON);
     }
 
     #[test]
+    #[allow(clippy::similar_names)]
     fn mul_timeseries() {
         // Create a timeline
         let from = Date::from_calendar_date(2022, Month::January, 10).unwrap();
@@ -2043,10 +2159,10 @@ mod tests {
         let ts12 = &ts10 * &ts11;
         assert!(ts12.is_ok());
         let ts12 = ts12.unwrap();
-        assert!((ts12.values[0] as f64 - 3.36).abs() < 1e-10);
-        assert!((ts12.values[1] as f64 - 0.0).abs() < 1e-10);
-        assert!((ts12.values[2] as f64 - 0.00045).abs() < 1e-10);
-        assert!((ts12.values[3] as f64 + 1.5).abs() < 1e-10);
+        assert!((ts12.values[0] as f64 - 3.36).abs() < f64::EPSILON);
+        assert!((ts12.values[1] as f64 - 0.0).abs() < f64::EPSILON);
+        assert!((ts12.values[2] as f64 - 0.00045).abs() < f64::EPSILON);
+        assert!((ts12.values[3] as f64 + 1.5).abs() < f64::EPSILON);
     }
 
     #[test]
@@ -2075,13 +2191,14 @@ mod tests {
         let v10 = vec![1.2, 1000.6, 0.0001, 3.0];
         let ts10 = TimeSeries::new(&tl, v10).unwrap();
         let ts12 = &ts10 * 2.0;
-        assert!((ts12.values[0] as f64 - 2.4).abs() < 1e-10);
-        assert!((ts12.values[1] as f64 - 2001.2).abs() < 1e-10);
-        assert!((ts12.values[2] as f64 - 0.0002).abs() < 1e-10);
-        assert!((ts12.values[3] as f64 - 6.0).abs() < 1e-10);
+        assert!((ts12.values[0] as f64 - 2.4).abs() < f64::EPSILON);
+        assert!((ts12.values[1] as f64 - 2001.2).abs() < f64::EPSILON);
+        assert!((ts12.values[2] as f64 - 0.0002).abs() < f64::EPSILON);
+        assert!((ts12.values[3] as f64 - 6.0).abs() < f64::EPSILON);
     }
 
     #[test]
+    #[allow(clippy::similar_names)]
     fn div_timeseries() {
         // Create a timeline
         let from = Date::from_calendar_date(2022, Month::January, 10).unwrap();
@@ -2133,10 +2250,14 @@ mod tests {
         let ts12 = &ts10 / &ts11;
         assert!(ts12.is_ok());
         let ts12 = ts12.unwrap();
-        assert!((ts12.values[0] as f64 - 0.428571428571).abs() < 1e-10);
-        assert_eq!(ts12.values[1], f64::INFINITY);
-        assert!((ts12.values[2] as f64 - 0.000022222222).abs() < 1e-10);
-        assert!((ts12.values[3] as f64 + 6.0).abs() < 1e-10);
+        let mut val = 1.2 / 2.8;
+        assert!((ts12.values[0] as f64 - val).abs() < f64::EPSILON);
+        //assert!((ts12.values[1] as f64 - f64::INFINITY).abs() < f64::EPSILON);
+        assert!(ts12.values[1] == f64::INFINITY);
+        val = 0.0001 / 4.5;
+        assert!((ts12.values[2] as f64 - val).abs() < f64::EPSILON);
+        val = 3.0 / -0.5;
+        assert!((ts12.values[3] as f64 - val).abs() < f64::EPSILON);
     }
 
     #[test]
@@ -2163,13 +2284,14 @@ mod tests {
         let v10 = vec![1.2, 1000.6, 0.0001, 3.0];
         let ts10 = TimeSeries::new(&tl, v10).unwrap();
         let ts12 = &ts10 / 2.0;
-        assert!((ts12.values[0] as f64 - 0.6).abs() < 1e-10);
-        assert!((ts12.values[1] as f64 - 500.3).abs() < 1e-10);
-        assert!((ts12.values[2] as f64 - 0.00005).abs() < 1e-10);
-        assert!((ts12.values[3] as f64 - 1.5).abs() < 1e-10);
+        assert!((ts12.values[0] as f64 - 0.6).abs() < f64::EPSILON);
+        assert!((ts12.values[1] as f64 - 500.3).abs() < f64::EPSILON);
+        assert!((ts12.values[2] as f64 - 0.00005).abs() < f64::EPSILON);
+        assert!((ts12.values[3] as f64 - 1.5).abs() < f64::EPSILON);
     }
 
     #[test]
+    #[allow(clippy::similar_names)]
     fn rem_timeseries() {
         // Create a timeline
         let from = Date::from_calendar_date(2022, Month::January, 10).unwrap();
@@ -2260,6 +2382,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::similar_names)]
     fn iterator() {
         // Create a quarterly timeseries
         let from = Date::from_calendar_date(2022, Month::January, 1).unwrap();

@@ -3,7 +3,7 @@ use time::Date;
 
 use crate::{Duration, TimeSeriesError};
 
-/// # DateRange
+/// # `DateRange`
 ///
 /// Simply comprises a pair of [`time::Date`] objects that represent
 /// the start and end of a date range
@@ -13,7 +13,7 @@ use crate::{Duration, TimeSeriesError};
 /// be represented as 1-Jun to 1-Jul
 ///
 /// Can be converted into a `Duration` object, or created from a `Duration`
-/// plus a `Date`. This allows for both assessing a date_diff and a date_add
+/// plus a `Date`. This allows for both assessing a ``date_diff`` and a ``date_add``
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DateRange {
     pub(crate) from: Date,
@@ -25,6 +25,7 @@ impl DateRange {
     /// Creates a new `DateRange` object.
     /// Reorders the arguments to ensure the from part is always the start of the
     /// timeline, i.e. the earliest date
+    #[must_use]
     pub fn new(from: Date, to: Date) -> Self {
         if from < to {
             Self { from, to }
@@ -35,6 +36,10 @@ impl DateRange {
 
     /// Creates a new `DateRange` object from a `Date` and a
     /// `Duration`
+    ///
+    /// # Errors
+    /// Will generate an error if `from` plus `duration` cannot be coputed
+    /// , which is TODO
     pub fn from_duration(from: Date, dur: Duration) -> Result<Self, TimeSeriesError> {
         let to = (from + dur)?;
         Ok(Self::new(from, to.primary()))
@@ -42,16 +47,19 @@ impl DateRange {
     // endregion constructors
 
     // region: getters
+    #[must_use]
     pub fn from(&self) -> Date {
         self.from
     }
 
+    #[must_use]
     pub fn to(&self) -> Date {
         self.to
     }
 
     /// Retun last valid day inside the `DateRange`, as by
     /// definition `to` is just outside the `DateRange`
+    #[must_use]
     pub fn last_day(&self) -> Date {
         self.to.previous_day().unwrap_or(self.to)
     }
@@ -59,58 +67,49 @@ impl DateRange {
 
     // region: conversion
     /// Return a `Duration` that represents the `DateRange` time span
+    #[must_use]
     pub fn as_duration(&self) -> Duration {
         Duration::from_dates(self.from, self.to)
     }
 
     /// Return the number of days in the `DateRange`
+    #[must_use]
     pub fn as_days(&self) -> i32 {
         self.to.to_julian_day() - self.from.to_julian_day()
     }
 
     /// Return the number of weeks that can fit in the `DateRange`.
-    /// If inc_part is false, part weeks will be discarded e.g. 13 days -> 1 week.
-    /// If inc_part is true, part weeks will count as an extra period e.g. 13 days -> 2 weeks.
+    /// If `inc_part` is false, part weeks will be discarded e.g. 13 days -> 1 week.
+    /// If `inc_part` is true, part weeks will count as an extra period e.g. 13 days -> 2 weeks.
+    #[must_use]
     pub fn as_weeks(&self, inc_part: bool) -> i32 {
-        self.as_days() / 7
-            + if inc_part && (self.as_days() % 7 > 0) {
-                1
-            } else {
-                0
-            }
+        self.as_days() / 7 + i32::from(inc_part && (self.as_days() % 7 > 0))
     }
 
     /// Return the number of months that can fit in the `DateRange`.
-    /// If inc_part is false, part months will be discarded e.g. 45 days -> 1 month.
-    /// If inc_part is true, part months will count as an extra period e.g. 45 days -> 2 months.
+    /// If `inc_part` is false, part months will be discarded e.g. 45 days -> 1 month.
+    /// If `inc_part` is true, part months will count as an extra period e.g. 45 days -> 2 months.
+    #[must_use]
     pub fn as_months(&self, inc_part: bool) -> i32 {
         let dur = self.as_duration();
-        dur.years() * 12 + dur.months() + if inc_part && (dur.days() > 0) { 1 } else { 0 }
+        dur.years() * 12 + dur.months() + i32::from(inc_part && (dur.days() > 0))
     }
 
     /// Return the number of quarters that can fit in the `DateRange`.
-    /// If inc_part is false, part quarters will be discarded e.g. 145 days -> 1 quarter.
-    /// If inc_part is true, part quarters will count as an extra period e.g. 145 days -> 2 quarters.
+    /// If `inc_part` is false, part quarters will be discarded e.g. 145 days -> 1 quarter.
+    /// If `inc_part` is true, part quarters will count as an extra period e.g. 145 days -> 2 quarters.
+    #[must_use]
     pub fn as_quarters(&self, inc_part: bool) -> i32 {
-        self.as_months(inc_part) / 3
-            + if inc_part && (self.as_months(inc_part) % 3 > 0) {
-                1
-            } else {
-                0
-            }
+        self.as_months(inc_part) / 3 + i32::from(inc_part && (self.as_months(inc_part) % 3 > 0))
     }
 
     /// Return the number of years that can fit in the `DateRange`.
-    /// If inc_part is false, part years will be discarded e.g. 500 days -> 1 year.
-    /// If inc_part is true, part years will count as an extra period e.g. 500 days -> 2 years.
+    /// If `inc_part` is false, part years will be discarded e.g. 500 days -> 1 year.
+    /// If `inc_part` is true, part years will count as an extra period e.g. 500 days -> 2 years.
+    #[must_use]
     pub fn as_years(&self, inc_part: bool) -> i32 {
         let dur = self.as_duration();
-        dur.years()
-            + if inc_part && (dur.days() > 0 || dur.months() > 0) {
-                1
-            } else {
-                0
-            }
+        dur.years() + i32::from(inc_part && (dur.days() > 0 || dur.months() > 0))
     }
     // endregion conversion
 
@@ -118,6 +117,7 @@ impl DateRange {
     /// Returns a `DateRange` that represents the intersection
     /// of the two input `DateRange`. Is an Option to allow for
     /// the the two ranges not overlapping, in which case None is returned
+    #[must_use]
     pub fn intersect(&self, other: &DateRange) -> Option<DateRange> {
         if other.from >= self.to || other.to <= self.from {
             None
@@ -134,6 +134,7 @@ impl DateRange {
     /// `DateRange` cannot be disjoint, this will span from the
     /// earliest start date to the latest end date, with no regard
     /// for whether the porition in between is continuous
+    #[must_use]
     pub fn union(&self, other: &DateRange) -> DateRange {
         let from = cmp::min(self.from, other.from);
         let to = cmp::max(self.to, other.to);
@@ -141,12 +142,14 @@ impl DateRange {
     }
 
     /// Does the `DateRange` contain the `Date`?
+    #[must_use]
     pub fn contains(&self, date: Date) -> bool {
         self.from <= date && self.to > date
     }
 
     /// Tests if the source date range contains the whole of the
     /// second date range
+    #[must_use]
     pub fn fully_contains(&self, other: &DateRange) -> bool {
         self.from <= other.from && self.to >= other.to
     }

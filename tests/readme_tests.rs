@@ -179,11 +179,11 @@ fn readme_timeseries() {
     assert_eq!(ts1.value_range(slice_dr).unwrap(), vec![2, 3, 4]);
 
     // You can create a time series from a partial specification
-    let mut ts3 = TimeSeries::new_partial(&tl, 0, v2.clone(), 0);
+    let mut ts3 = TimeSeries::new_partial(&tl, 0, &v2, 0);
     assert_eq!(ts3.value_range(dr).unwrap(), vec![1, 2, 3, 4, 5, 6, 7, 0]);
 
     // Partial creation will truncate overflowing values on the RHS as required
-    ts3 = TimeSeries::new_partial(&tl, 3, v2, 0);
+    ts3 = TimeSeries::new_partial(&tl, 3, &v2, 0);
     assert_eq!(ts3.value_range(dr).unwrap(), vec![0, 0, 0, 1, 2, 3, 4, 5]);
 
     // You can create a timeseries from a "generator function"
@@ -235,7 +235,7 @@ fn readme_timeseries() {
     // You can change the periodicity of a TimeSeries
     // N.B. only works with f64 currently as you might need to split a period
     let tly = Timeline::new(dr, Period::Year);
-    let ts8 = ts6.change_periodicity(&tly, AggType::Add).unwrap();
+    let ts8 = ts6.change_periodicity(&tly, &AggType::Add).unwrap();
     assert_eq!(ts8.value_range(dr).unwrap(), vec![10.0, 26.0]);
 
     // All of which is pre-amble to the real purpose of Time Series obejcts which is to combine them

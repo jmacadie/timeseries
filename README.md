@@ -279,7 +279,7 @@ assert_eq!(ts3.value_range(dr).unwrap(), vec![0, 300, 0, 1, 2, 3, 4, 5]);
 // You can change the periodicity of a TimeSeries
 // N.B. only works with f64 currently as you might need to split a period
 let tly = Timeline::new(dr, Period::Year);
-let ts8 = ts6.change_periodicity(&tly, AggType::Add).unwrap();
+let ts8 = ts6.change_periodicity(&tly, &AggType::Add).unwrap();
 assert_eq!(ts8.value_range(dr).unwrap(), vec![10.0, 26.0]);
 
 // All of which is pre-amble to the real purpose of Time Series obejcts which is to combine them

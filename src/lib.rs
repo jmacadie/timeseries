@@ -1,4 +1,4 @@
-//! # TimeSeries library
+//! # ``TimeSeries`` library
 //!
 //! Provides a framework within which to build time aware projection
 //! models in Rust. The library is written to work with time periods
@@ -10,6 +10,9 @@
 //! model in Rust
 //!
 //! This library builds upon the [`time`] library
+
+#![warn(clippy::all, clippy::pedantic)]
+
 mod date_arithmetic_ouput;
 mod date_range;
 mod duration;

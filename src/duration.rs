@@ -88,6 +88,7 @@ impl Duration {
     ///
     /// Subsequently use the `normalise()` method if you wish to coerce the
     /// values to a sensible range e.g. 365 days -> 1 year
+    #[must_use]
     pub fn new(days: i32, months: i32, years: i32) -> Self {
         Self {
             days,
@@ -129,6 +130,7 @@ impl Duration {
     ///
     /// A similar order transposition will occur if an invalid intermediate
     /// date is arrived at
+    #[must_use]
     pub fn from_dates(from: Date, to: Date) -> Self {
         // If dates ordered with from before to, then just run a normal
         // duration calc
@@ -142,6 +144,10 @@ impl Duration {
     }
 
     /// Create a new `Duration` from a [`time::Duration`] object
+    /// # Errors
+    /// Will return a `TimeSeriesError::TimeDurationTooLarge` error
+    /// if the days in the `time::Duration`, which are `i64`, cannot
+    /// be cast into an `i32`
     pub fn from_time_duration(dur: time::Duration) -> Result<Self, TimeSeriesError> {
         let days = dur.whole_days();
         let days = i32::try_from(days).map_err(|_| TimeSeriesError::TimeDurationTooLarge)?;
@@ -155,7 +161,7 @@ impl Duration {
     fn from_dates_pos(from: Date, to: Date) -> Self {
         let mut years = to.year() - from.year();
         let mut months = to.month() as i32 - from.month() as i32;
-        let mut days = to.day() as i32 - from.day() as i32;
+        let mut days = i32::from(to.day()) - i32::from(from.day());
 
         let (y, m) = Self::coerce_ym(years, months, days);
         months = m;
@@ -195,26 +201,25 @@ impl Duration {
             _ => to.year(),
         };
 
-        let temp_date = match Date::from_calendar_date(temp_year, temp_month, temp_day) {
-            Ok(d) => d,
-            Err(_) => {
-                // If we have an error then we couldn't get to a real date by adding years and months first.
-                // It means we had a long month day (generally 31) and tried to match it to a short month
-                // Instead need to add enough days to the from date to get to the first day of the next
-                // month before we consider the month or the year move
-                // If we have this, the day diff can be calculated directly and we can return straight out
-                days = to.day() as i32 + days_in_year_month(from.year(), from.month()) as i32
-                    - from.day() as i32
-                    + 1;
-                return (months, days);
-            }
+        let temp_date = if let Ok(d) = Date::from_calendar_date(temp_year, temp_month, temp_day) {
+            d
+        } else {
+            // If we have an error then we couldn't get to a real date by adding years and months first.
+            // It means we had a long month day (generally 31) and tried to match it to a short month
+            // Instead need to add enough days to the from date to get to the first day of the next
+            // month before we consider the month or the year move
+            // If we have this, the day diff can be calculated directly and we can return straight out
+            days = i32::from(to.day()) + i32::from(days_in_year_month(from.year(), from.month()))
+                - i32::from(from.day())
+                + 1;
+            return (months, days);
         };
-
         days = match temp_month {
             Month::December => {
-                to.ordinal() as i32 - temp_date.ordinal() as i32 + days_in_year(temp_year) as i32
+                i32::from(to.ordinal()) - i32::from(temp_date.ordinal())
+                    + i32::from(days_in_year(temp_year))
             }
-            _ => to.ordinal() as i32 - temp_date.ordinal() as i32,
+            _ => i32::from(to.ordinal()) - i32::from(temp_date.ordinal()),
         };
         (months, days)
     }
@@ -224,6 +229,7 @@ impl Duration {
     /// Return the number of days in the Duration.
     /// Note that this can change after a normalise call
     /// even though it remains the same Duration
+    #[must_use]
     pub fn days(&self) -> i32 {
         self.days
     }
@@ -231,6 +237,7 @@ impl Duration {
     /// Return the number of months in the Duration.
     /// Note that this can change after a normalise call
     /// even though it remains the same Duration
+    #[must_use]
     pub fn months(&self) -> i32 {
         self.months
     }
@@ -238,6 +245,7 @@ impl Duration {
     /// Return the number of years in the Duration.
     /// Note that this can change after a normalise call
     /// even though it remains the same Duration
+    #[must_use]
     pub fn years(&self) -> i32 {
         self.years
     }
@@ -249,14 +257,16 @@ impl Duration {
     /// By normalised it is meant that days are in the range 0..32 &
     /// months are in the range  0..13
     ///
-    /// Will return error in the case where the date plus the duration
-    /// errors
+    /// # Errors
+    /// will return an error if the addition implied between `self` and `date`
+    /// overflows the `from_julian_day` method of the underlying `Date` object
     pub fn normalise(&self, date: Date) -> Result<Self, TimeSeriesError> {
         let to = (date + self)?.primary();
         Ok(Self::from_dates(date, to))
     }
 
     /// Inverts a duration by changing the sign on every part of the duration
+    #[must_use]
     pub fn invert(&self) -> Self {
         let days = -self.days;
         let months = -self.months;
@@ -271,8 +281,11 @@ impl Duration {
     /// Convert the duration to an approximate number of days.
     /// Isn't perfect as to get this right you'd need to know which reference
     /// date you're starting from
+    #[must_use]
     pub fn size(&self) -> f64 {
-        self.years as f64 * 365.25 + self.months as f64 * 365.25 / 12_f64 + self.days as f64
+        f64::from(self.years) * 365.25
+            + f64::from(self.months) * 365.25 / 12_f64
+            + f64::from(self.days)
     }
 
     /// Is the direction of the duration forwards in time?
@@ -282,6 +295,7 @@ impl Duration {
     /// it's possible that for weird mixed sign durations this could be
     /// wrong when the duration is close to zero. CBA to code for this as
     /// no one using this sanely should be doing this.
+    #[must_use]
     pub fn forwards(&self) -> bool {
         self.size() > 0_f64
     }
@@ -292,6 +306,10 @@ impl Duration {
     /// Called by the trait implementations which consider the
     /// various combinations of adding and subtracting Dates and
     /// Durations
+    ///
+    /// # Errors
+    /// Can return an error if the addition implied between `dur` and `date`
+    /// overflows the `from_julian_day` method of the underlying `Date` object
     fn add_int(dur: Duration, date: Date) -> Result<DateArithmeticOutput, TimeSeriesError> {
         // Add days first for negative durations & last for positive
         let days_first = !dur.forwards();
@@ -304,12 +322,14 @@ impl Duration {
             // an invalid date, so the invalid date is truncated to month end
             // Only ever happens at end of month
             if Self::is_eom(date) {
-                let day = date.day() as i32 + cmp::max(dur.days, 0) + 1;
+                let day = i32::from(date.day()) + cmp::max(dur.days, 0) + 1;
                 let (year, month) = dur.add_ym(date);
-                let lim = days_in_year_month(year, month) as i32 + cmp::min(dur.days, 0) + 1;
+                let lim = i32::from(days_in_year_month(year, month)) + cmp::min(dur.days, 0) + 1;
                 for i in day..lim {
                     // N.B. might never loop here & that's OK
+                    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
                     let temp = i as u8;
+                    #[deny(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
                     if let Ok(d) = Date::from_calendar_date(year, month, temp) {
                         output.append(d);
                     }
@@ -339,10 +359,10 @@ impl Duration {
         }
 
         let (year, month) = self.add_ym(temp);
-        let to = days_in_year_month(year, month) as i32;
-        let from = days_in_year_month(temp.year(), temp.month()) as i32;
+        let to = i32::from(days_in_year_month(year, month));
+        let from = i32::from(days_in_year_month(temp.year(), temp.month()));
 
-        Ok(temp.day() as i32 > from - cmp::min(cmp::max(to - from, 0), cmp::max(day_lim, 1)))
+        Ok(i32::from(temp.day()) > from - cmp::min(cmp::max(to - from, 0), cmp::max(day_lim, 1)))
     }
 
     /// Is the date at the end of the month?
@@ -372,8 +392,9 @@ impl Duration {
         // value, so that we remove the chance for panicing
         // code, although this does introduce the risk that
         // I'm wrong and we have a silent error!
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
         let month = Month::try_from(month as u8).unwrap_or(Month::January);
-
+        #[deny(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
         (year, month)
     }
 
@@ -382,6 +403,10 @@ impl Duration {
     ///
     /// If the other way round also fails, will truncate
     /// the failing intermediate date to end of month
+    ///
+    /// # Errors
+    /// Can return an error if the addition implied between `self` and `date`
+    /// overflows the `from_julian_day` method of the underlying `Date` object
     fn add_once(
         &self,
         date: Date,
@@ -399,17 +424,16 @@ impl Duration {
         let (year, month) = self.add_ym(temp);
 
         // Try to create the intermediate date
-        temp = match Date::from_calendar_date(year, month, day) {
-            Ok(d) => d,
-            Err(_) => {
-                if !first_pass {
-                    // If all else fails then take the day at the end of the month being tried
-                    let d = Date::from_calendar_date(year, month, days_in_year_month(year, month))
-                        .unwrap_or(date);
-                    return Ok(DateArithmeticOutput::new(d));
-                }
-                return self.add_once(date, !days_first, false);
+        temp = if let Ok(d) = Date::from_calendar_date(year, month, day) {
+            d
+        } else {
+            if !first_pass {
+                // If all else fails then take the day at the end of the month being tried
+                let d = Date::from_calendar_date(year, month, days_in_year_month(year, month))
+                    .unwrap_or(date);
+                return Ok(DateArithmeticOutput::new(d));
             }
+            return self.add_once(date, !days_first, false);
         };
 
         // Add days as required
@@ -420,6 +444,10 @@ impl Duration {
     }
 
     /// Internal method to add any number of days to a date
+    ///
+    /// # Errors
+    /// Can return an error if the addition implied between `self` and `date`
+    /// overflows the `from_julian_day` method of the underlying `Date` object
     fn add_days(&self, date: Date) -> Result<Date, TimeSeriesError> {
         let julian = date.to_julian_day() + self.days;
         let d = Date::from_julian_day(julian).map_err(|_| TimeSeriesError::DateOutOfRange)?;

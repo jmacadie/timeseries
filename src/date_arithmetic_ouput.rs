@@ -1,7 +1,7 @@
 use core::fmt;
 use time::Date;
 
-/// # DateArithmeticOutput
+/// # `DateArithmeticOutput`
 ///
 /// The requirement for `Date` plus / minus a `Duration`
 /// to be reversible _e.g. 30th Mar minus 1 month is
@@ -21,6 +21,7 @@ pub struct DateArithmeticOutput {
 }
 
 impl DateArithmeticOutput {
+    #[must_use]
     pub fn new(date: Date) -> Self {
         let values = vec![date];
         Self { values }
@@ -30,14 +31,17 @@ impl DateArithmeticOutput {
         self.values.push(date);
     }
 
+    #[must_use]
     pub fn contains(&self, date: Date) -> bool {
         self.values.contains(&date)
     }
 
+    #[must_use]
     pub fn primary(&self) -> Date {
         self.values[0]
     }
 
+    #[must_use]
     pub fn value(&self, idx: u8) -> Option<Date> {
         let d = *self.values.get(idx as usize)?;
         Some(d)
@@ -48,7 +52,7 @@ impl DateArithmeticOutput {
 impl fmt::Display for DateArithmeticOutput {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut output = String::new();
-        for d in self.values.iter() {
+        for d in &self.values {
             output.push_str(&format!("{}; ", d));
         }
         if output.chars().count() > 0 {

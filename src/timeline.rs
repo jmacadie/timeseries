@@ -28,13 +28,14 @@ pub struct Timeline {
 impl Timeline {
     // region: constructors
     /// Create a new Timeline
+    #[must_use]
     pub fn new(range: DateRange, periodicity: Period) -> Self {
         let len = match periodicity {
-            Period::Day => range.as_days() as usize,
-            Period::Week => range.as_weeks(true) as usize,
-            Period::Month => range.as_months(true) as usize,
-            Period::Quarter => range.as_quarters(true) as usize,
-            Period::Year => range.as_years(true) as usize,
+            Period::Day => Self::get_len(range.as_days()),
+            Period::Week => Self::get_len(range.as_weeks(true)),
+            Period::Month => Self::get_len(range.as_months(true)),
+            Period::Quarter => Self::get_len(range.as_quarters(true)),
+            Period::Year => Self::get_len(range.as_years(true)),
         };
         Timeline {
             range,
@@ -43,8 +44,17 @@ impl Timeline {
         }
     }
 
+    /// Internal function do deal with the faff og casting from
+    /// i32 to usize. Run an abs on the range and then coerce any
+    /// errors to zero
+    fn get_len(range: i32) -> usize {
+        let abs = range.checked_abs().unwrap_or(0);
+        usize::try_from(abs).unwrap_or(0)
+    }
+
     /// Create a new timeline with the same start and end dates
     /// but with different periodicity
+    #[must_use]
     pub fn change_periodicity(&self, new: Period) -> Self {
         Timeline::new(self.range, new)
     }
@@ -52,16 +62,19 @@ impl Timeline {
 
     // region: getters
     /// Return the Date Range of the Timeline
+    #[must_use]
     pub fn range(&self) -> DateRange {
         self.range
     }
 
     /// Return the periodicity of the Timeline
+    #[must_use]
     pub fn periodicity(&self) -> Period {
         self.periodicity
     }
 
     /// Return the length of the Timeline
+    #[must_use]
     pub fn len(&self) -> usize {
         self.len
     }
@@ -71,23 +84,25 @@ impl Timeline {
     /// Return the index position of the date within the
     /// timeline. Returns None if the date is outside of
     /// the timeline
+    #[must_use]
     pub fn index_at(&self, date: Date) -> Option<usize> {
         if !self.range.contains(date) {
             return None;
         }
         let tmp_range = DateRange::new(self.range.from, date);
         match self.periodicity {
-            Period::Day => Some(tmp_range.as_days() as usize),
-            Period::Week => Some(tmp_range.as_weeks(false) as usize),
-            Period::Month => Some(tmp_range.as_months(false) as usize),
-            Period::Quarter => Some(tmp_range.as_quarters(false) as usize),
-            Period::Year => Some(tmp_range.as_years(false) as usize),
+            Period::Day => Some(Self::get_len(tmp_range.as_days())),
+            Period::Week => Some(Self::get_len(tmp_range.as_weeks(false))),
+            Period::Month => Some(Self::get_len(tmp_range.as_months(false))),
+            Period::Quarter => Some(Self::get_len(tmp_range.as_quarters(false))),
+            Period::Year => Some(Self::get_len(tmp_range.as_years(false))),
         }
     }
 
     /// Return the date range that represents a single period at the index.
     /// Period is defined by the periodicity of the Timeline,
     /// so a monthly timeline would return a month date range
+    #[must_use]
     pub fn index(&self, mut idx: i32) -> Option<DateRange> {
         let len = i32::try_from(self.len).ok()?;
         if idx >= len || idx < -len {
@@ -128,16 +143,19 @@ impl Timeline {
     // endregion indexing
 
     // region: head_tail
+    #[must_use]
     pub fn head(&self) -> Option<DateRange> {
         self.index(0)
     }
 
+    #[must_use]
     pub fn tail(&self) -> Option<Timeline> {
         let head = self.head()?;
         let tail_range = DateRange::new(head.to, self.range.to());
         Some(Timeline::new(tail_range, self.periodicity))
     }
 
+    #[must_use]
     pub fn split_first(&self) -> (Option<DateRange>, Option<Timeline>) {
         (self.head(), self.tail())
     }
@@ -188,7 +206,7 @@ impl Iterator for TimelineIterator {
                 let (mut y, mut m, mut d) = next_date.to_calendar_date();
                 m = m.next();
                 if m == Month::January {
-                    y += 1
+                    y += 1;
                 };
                 d = cmp::min(days_in_year_month(y, m), d);
                 next_date = Date::from_calendar_date(y, m, d).ok()?;
@@ -198,7 +216,7 @@ impl Iterator for TimelineIterator {
                 for _ in 0..3 {
                     m = m.next();
                     if m == Month::January {
-                        y += 1
+                        y += 1;
                     };
                 }
                 d = cmp::min(days_in_year_month(y, m), d);
