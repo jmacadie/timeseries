@@ -65,32 +65,104 @@ impl fmt::Display for DateArithmeticOutput {
 // endregion formatting
 
 // region: iterator
+
+// region: owned_iterator
+pub struct IntoIter {
+    values: Vec<Date>,
+}
+
+impl Iterator for IntoIter {
+    type Item = Date;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.values.is_empty() {
+            return None;
+        }
+        Some(self.values.remove(0))
+    }
+}
+
 impl IntoIterator for DateArithmeticOutput {
     type Item = Date;
-    type IntoIter = DateArithmeticOuputIterator;
+    type IntoIter = IntoIter;
 
     fn into_iter(self) -> Self::IntoIter {
-        DateArithmeticOuputIterator {
+        IntoIter {
             values: self.values,
-            index: 0,
+        }
+    }
+}
+// endregion owend_iterator
+
+// region: ref_iterator
+pub struct Iter<'a> {
+    values: &'a [Date],
+}
+
+impl<'a> Iterator for Iter<'a> {
+    type Item = &'a Date;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let (val, tail) = self.values.split_first()?;
+        self.values = tail;
+        Some(val)
+    }
+}
+
+impl<'a> DateArithmeticOutput {
+    #[must_use]
+    pub fn iter(&'a self) -> Iter<'a> {
+        Iter {
+            values: &self.values[..],
         }
     }
 }
 
-pub struct DateArithmeticOuputIterator {
-    values: Vec<Date>,
-    index: usize,
-}
+impl<'a> IntoIterator for &'a DateArithmeticOutput {
+    type Item = &'a Date;
+    type IntoIter = Iter<'a>;
 
-impl Iterator for DateArithmeticOuputIterator {
-    type Item = Date;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let d = *self.values.get(self.index)?;
-        self.index += 1;
-        Some(d)
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
     }
 }
+// endregion ref_iterator
+
+// region: mutref_iterator
+pub struct IterMut<'a> {
+    values: &'a mut [Date],
+}
+
+impl<'a> Iterator for IterMut<'a> {
+    type Item = &'a mut Date;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let values = std::mem::take(&mut self.values);
+        let (val, tail) = values.split_first_mut()?;
+        self.values = tail;
+        Some(val)
+    }
+}
+
+impl<'a> DateArithmeticOutput {
+    #[must_use]
+    pub fn iter_mut(&'a mut self) -> IterMut<'a> {
+        IterMut {
+            values: &mut self.values[..],
+        }
+    }
+}
+
+impl<'a> IntoIterator for &'a mut DateArithmeticOutput {
+    type Item = &'a mut Date;
+    type IntoIter = IterMut<'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter_mut()
+    }
+}
+// endregion mutref_iterator
+
 // endregion iterator
 
 #[cfg(test)]
@@ -201,7 +273,25 @@ mod tests {
         dao.append(d2);
         dao.append(d3);
 
-        // Test in a for loop
+        // Test reference version in for loop
+        for (i, d) in dao.iter().enumerate() {
+            match i {
+                0 => {
+                    assert_eq!(*d, d1);
+                }
+                1 => {
+                    assert_eq!(*d, d2);
+                }
+                2 => {
+                    assert_eq!(*d, d3);
+                }
+                _ => {
+                    unreachable!();
+                }
+            }
+        }
+
+        // Test owned version in for loop
         for (i, d) in dao.into_iter().enumerate() {
             match i {
                 0 => {
