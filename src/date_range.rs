@@ -128,17 +128,21 @@ impl DateRange {
         }
     }
 
-    // TODO: consider whether this should be an Option, with None being
-    // returned where the two DateRanges are disjoint
-    /// Returns the union of the two input `DateRange`. Since
-    /// `DateRange` cannot be disjoint, this will span from the
-    /// earliest start date to the latest end date, with no regard
-    /// for whether the porition in between is continuous
+    /// Returns the union of the two input `DateRange`
+    ///
+    /// Is an option to allow for `None` returned in the case where
+    /// input ranges are disjoint. `DateRange` cannot be disjoint, so
+    /// `None` is the only viable return type
     #[must_use]
-    pub fn union(&self, other: &DateRange) -> DateRange {
+    pub fn union(&self, other: &DateRange) -> Option<DateRange> {
+        let from_max = cmp::max(self.from, other.from);
+        let to_min = cmp::min(self.to, other.to);
+        if from_max > to_min {
+            return None;
+        };
         let from = cmp::min(self.from, other.from);
         let to = cmp::max(self.to, other.to);
-        DateRange::new(from, to)
+        Some(DateRange::new(from, to))
     }
 
     /// Does the `DateRange` contain the `Date`?
@@ -467,29 +471,28 @@ mod tests {
         let mut d3 = Date::from_calendar_date(2020, Month::January, 15).unwrap();
         let mut d4 = Date::from_calendar_date(2021, Month::January, 15).unwrap();
         let mut dr2 = DateRange::new(d3, d4);
-        let mut dr_out = DateRange::new(d3, d2);
-        assert_eq!(dr1.union(&dr2), dr_out, "Disjoint");
+        assert_eq!(dr1.union(&dr2), None, "Disjoint");
 
         // Overlap one side
         d3 = Date::from_calendar_date(2020, Month::January, 15).unwrap();
         d4 = Date::from_calendar_date(2022, Month::March, 15).unwrap();
         dr2 = DateRange::new(d3, d4);
-        dr_out = DateRange::new(d3, d2);
-        assert_eq!(dr1.union(&dr2), dr_out, "Overlap one side");
+        let mut dr_out = DateRange::new(d3, d2);
+        assert_eq!(dr1.union(&dr2), Some(dr_out), "Overlap one side");
 
         // Range within start range
         d3 = Date::from_calendar_date(2022, Month::January, 31).unwrap();
         d4 = Date::from_calendar_date(2022, Month::March, 15).unwrap();
         dr2 = DateRange::new(d3, d4);
         dr_out = DateRange::new(d1, d2);
-        assert_eq!(dr1.union(&dr2), dr_out, "Within");
+        assert_eq!(dr1.union(&dr2), Some(dr_out), "Within");
 
         // Range without start range
         d3 = Date::from_calendar_date(2020, Month::January, 15).unwrap();
         d4 = Date::from_calendar_date(2032, Month::March, 15).unwrap();
         dr2 = DateRange::new(d3, d4);
         dr_out = DateRange::new(d3, d4);
-        assert_eq!(dr1.union(&dr2), dr_out, "Without");
+        assert_eq!(dr1.union(&dr2), Some(dr_out), "Without");
     }
 
     #[test]

@@ -97,7 +97,7 @@ fn readme_date_range() {
     // Can intersect or union two date ranges
     let mut dr3 = dr1.intersect(&dr2).unwrap();
     assert_eq!(dr3.as_days(), 226);
-    dr3 = dr1.union(&dr2);
+    dr3 = dr1.union(&dr2).unwrap();
     assert_eq!(dr3.as_days(), 1_295);
 
     // Can also test if a date is within the range
