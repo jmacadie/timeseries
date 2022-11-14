@@ -160,7 +160,6 @@ impl Timeline {
         (self.head(), self.tail())
     }
     // endregion head_tail
-    // TODO: Head, tail, split...
 }
 
 // region: iterators

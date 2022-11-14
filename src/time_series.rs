@@ -924,12 +924,35 @@ impl<'tl, 'b, T> TimeSeries<'tl, T>
 where
     T: 'b + Sum<&'b T>,
 {
+    /// Sums all the values of the `TimeSeries`
+    /// Loses the time dimension in the process
+    /// ---
+    /// ### Example
+    /// ```
+    /// use timeseries::{TimeSeries, Timeline, DateRange, Period, Duration};
+    /// use time::{Date, Month};
+    ///
+    /// // Create a timeline
+    /// let from = Date::from_calendar_date(2022, Month::January, 10).unwrap();
+    /// let to = Date::from_calendar_date(2023, Month::January, 10).unwrap();
+    /// let dr = DateRange::new(from, to);
+    /// let tl = Timeline::new(dr, Period::Quarter);
+    ///
+    /// // Create timeseries
+    /// let ts = TimeSeries::new(&tl, vec![1, 2, 3, 4]).unwrap();
+    ///
+    /// let res = ts.sum();
+    /// assert_eq!(res, 1 + 2 + 3 + 4);
+    /// assert_eq!(res, 10);
+    ///
+    /// ```
     #[must_use]
     pub fn sum(&'b self) -> T {
         self.into_iter().map(|(_, v)| v).sum::<T>()
     }
 
-    /// Takes a pair of `Timeseries` and pairwise multiplies
+    /// Pairwise multiplies and then sums two `TimeSeries`
+    /// Takes a pair of `TimeSeries` and pairwise multiplies
     /// each pair of values and then sums the resulting array
     /// ---
     /// ### Example
