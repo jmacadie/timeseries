@@ -212,6 +212,18 @@ where
         let end = self.timeline.index_at(dr.last_day())? as usize;
         self.values.get(start..=end)
     }
+
+    /// Return a reference to the underlying values vector
+    #[must_use]
+    pub fn values(&self) -> &Vec<T> {
+        &self.values
+    }
+
+    /// Return the timeline reference
+    #[must_use]
+    pub fn timeline(&self) -> &Timeline {
+        self.timeline
+    }
     // endregion getters
 }
 
@@ -456,159 +468,6 @@ impl<'tl> TimeSeries<'tl, f64> {
 // endregion empty_constuctors
 
 // TODO: implement a way of building corkscrews with multiple operations
-// TODO: provide a means to have a generic calc on more than a pair of TS objects
-//  current implementation is strictly limited to two operations
-
-// region: generic_func
-
-impl<'tl, T> TimeSeries<'tl, T> {
-    /// Allows the user to provide a closure that defines the pairwise combination
-    /// of two time series
-    ///
-    /// Note that for simple artihmetic operations (+, -, *, /) these operators are already
-    /// directly defined for the `TimeSeries` object, so that as long as you can apply the
-    /// arithmetic operation on the underlying value type (e.g. you can't divide Strings)
-    /// then you will be able to write something like this: `ts3 = &ts1 + &ts2;` or
-    /// `ts3 = &ts1 + 10;`
-    ///
-    /// The closure cannot have side effects (i.e. change the inputs provided). This
-    /// is to ensure that the `TimeSeries` being operated on, don't change in the process
-    /// of generating a new `TimeSeries`
-    ///
-    /// ---
-    /// ### Example
-    /// ```
-    /// use timeseries::{TimeSeries, Timeline, DateRange, Period, Duration};
-    /// use time::{Date, Month};
-    ///
-    /// // Create a timeline
-    /// let from = Date::from_calendar_date(2022, Month::January, 10).unwrap();
-    /// let to = Date::from_calendar_date(2023, Month::January, 10).unwrap();
-    /// let dr = DateRange::new(from, to);
-    /// let tl = Timeline::new(dr, Period::Quarter);
-    ///
-    /// // Create two timeseries
-    /// let v1 = vec![1, 2, 3, 4];
-    /// let ts1 = TimeSeries::new(&tl, v1).unwrap();
-    /// let v2 = vec![5, 6, 7, 8];
-    /// let ts2 = TimeSeries::new(&tl, v2).unwrap();
-    ///
-    /// // Write a generic function that can be pairwise applied to the elements of a TS and apply it
-    /// let op = |(&a, &b): (&i32, &i32)| -> i32 {
-    ///     if a < 3 {
-    ///         1
-    ///     } else {
-    ///         b + 1
-    ///     }
-    /// };
-    /// let ts3 = ts1.apply(&ts2, op).unwrap();
-    /// assert_eq!(ts3.value_range(dr).unwrap(), vec![1, 1, 8, 9]);
-    ///
-    /// ```
-    ///
-    /// # Errors
-    /// If the timelines of the two time series do not match this function
-    /// will return an error. Align them before calling this.
-    ///
-    /// It can also techincally error if the internal creation of the new
-    /// values array doesn't match the source timelines but I don't think
-    /// this can ever happen
-    pub fn apply<F>(
-        &self,
-        other: &TimeSeries<'tl, T>,
-        func: F,
-    ) -> Result<TimeSeries<'tl, T>, TimeSeriesError>
-    where
-        F: FnMut((&T, &T)) -> T,
-        T: Copy,
-    {
-        if self.timeline != other.timeline {
-            return Err(TimeSeriesError::TimelinesDoNotMatch);
-        }
-        let data = self
-            .values
-            .iter()
-            .zip(other.values.iter())
-            .map(func)
-            .collect();
-        let ts = TimeSeries::new(self.timeline, data)?;
-        Ok(ts)
-    }
-
-    /// Allows the user to provide a closure that defines the pairwise combination
-    /// of two time series, plus their timeline
-    ///
-    /// The closure cannot have side effects (i.e. change the inputs provided). This
-    /// is to ensure that the `TimeSeries` being operated on, don't change in the process
-    /// of generating a new `TimeSeries`
-    ///
-    /// ---
-    /// ### Example
-    /// ```
-    /// use timeseries::{TimeSeries, Timeline, DateRange, Period, Duration};
-    /// use time::{Date, Month};
-    ///
-    /// // Create a timeline
-    /// let from = Date::from_calendar_date(2022, Month::January, 1).unwrap();
-    /// let dur = Duration::new(0, 0, 2);
-    /// let dr = DateRange::from_duration(from, dur).unwrap();
-    /// let tl = Timeline::new(dr, Period::Quarter);
-    ///
-    /// // Create two timeseries
-    /// let v1 = vec![1, 2, 3, 4, 1, 2, 3, 4];
-    /// let ts1 = TimeSeries::new(&tl, v1).unwrap();
-    /// let v2 = vec![5, 6, 7, 8, 9, 10, 11, 12];
-    /// let ts2 = TimeSeries::new(&tl, v2).unwrap();
-    ///
-    /// // Create a date
-    /// let date = (from + Duration::new(0, 4, 1)).unwrap().primary();
-    /// // Write a generic function that can be pairwise applied to the elements of a TS and check OK
-    /// let op = |(t, &a, &b): (DateRange, &i32, &i32)| -> i32 {
-    ///     if t.contains(date) {
-    ///         1000
-    ///     } else if a < 3 {
-    ///         1
-    ///     } else {
-    ///         b + 1
-    ///     }
-    /// };
-    /// let ts3 = ts1.apply_with_time(&ts2, op).unwrap();
-    /// assert_eq!(ts3.value_range(dr).unwrap(), vec![1, 1, 8, 9, 1, 1000, 12, 13]);
-    ///
-    /// ```
-    ///
-    /// # Errors
-    /// If the timelines of the two time series do not match this function
-    /// will return an error. Align them before calling this.
-    ///
-    /// It can also techincally error if the internal creation of the new
-    /// values array doesn't match the source timelines but I don't think
-    /// this can ever happen
-    pub fn apply_with_time<F>(
-        &self,
-        other: &TimeSeries<'tl, T>,
-        func: F,
-    ) -> Result<TimeSeries<'tl, T>, TimeSeriesError>
-    where
-        F: FnMut((DateRange, &T, &T)) -> T,
-        T: Copy,
-    {
-        if self.timeline != other.timeline {
-            return Err(TimeSeriesError::TimelinesDoNotMatch);
-        }
-        let tl = *self.timeline;
-        let data = tl
-            .into_iter()
-            .zip(self.values.iter())
-            .zip(other.values.iter())
-            .map(|((a, b), c)| (a, b, c))
-            .map(func)
-            .collect();
-        let ts = TimeSeries::new(self.timeline, data)?;
-        Ok(ts)
-    }
-}
-// endregion generic_func
 
 // TODO: implement the OpAssign traits, such as AddAssign & DivAssign
 // region: arithmetic_ops
@@ -1838,118 +1697,6 @@ mod tests {
 
     #[test]
     #[allow(clippy::similar_names)]
-    fn apply() {
-        // Create a timeline
-        let from = Date::from_calendar_date(2022, Month::January, 10).unwrap();
-        let to = Date::from_calendar_date(2023, Month::January, 10).unwrap();
-        let dr = DateRange::new(from, to);
-        let tl = Timeline::new(dr, Period::Quarter);
-
-        // Create two timeseries
-        let v1 = vec![1, 2, 3, 4];
-        let ts1 = TimeSeries::new(&tl, v1).unwrap();
-        let v2 = vec![5, 6, 7, 8];
-        let ts2 = TimeSeries::new(&tl, v2).unwrap();
-
-        // Write a generic function that can be pairwise applied to the elements of a TS and check OK
-        let op = |(&a, &b): (&i32, &i32)| -> i32 {
-            if a < 3 {
-                1
-            } else {
-                b + 1
-            }
-        };
-        let ts3 = ts1.apply(&ts2, op);
-        assert!(ts3.is_ok());
-
-        // Check values in added TS
-        let ts3 = ts3.unwrap();
-        assert_eq!(ts3.values, vec![1, 1, 8, 9]);
-
-        // Check adding TS with different timeline is not OK
-        let tl2 = Timeline::new(dr, Period::Year);
-        let v4 = vec![1];
-        let ts4 = TimeSeries::new(&tl2, v4).unwrap();
-        let ts5 = ts4.apply(&ts1, op);
-        assert!(ts5.is_err());
-
-        // Check adding TS with cloned timeline is OK
-        let tl3 = tl;
-        let v6 = vec![1, 5, 8, 13];
-        let ts6 = TimeSeries::new(&tl3, v6).unwrap();
-        let ts7 = ts1.apply(&ts6, op);
-        assert!(ts7.is_ok());
-
-        // Check adding negative numbers and zero
-        let v8 = vec![-1, -2, 0, -100];
-        let ts8 = TimeSeries::new(&tl, v8).unwrap();
-        let ts9 = ts1.apply(&ts8, op);
-        assert!(ts9.is_ok());
-        let ts9 = ts9.unwrap();
-        assert_eq!(ts9.values, vec![1, 1, 1, -99]);
-
-        // Check adding floats
-        let v10 = vec![1.2, 1000.6, 0.0001, 3.0];
-        let v11 = vec![2.8, 0.0, 4.5, -0.5];
-        let op2 = |(&a, &b): (&f64, &f64)| -> f64 {
-            if a < 3.0 {
-                1.0
-            } else {
-                b + 1.0
-            }
-        };
-        let ts10 = TimeSeries::new(&tl, v10).unwrap();
-        let ts11 = TimeSeries::new(&tl, v11).unwrap();
-        let ts12 = ts10.apply(&ts11, op2);
-        assert!(ts12.is_ok());
-        let ts12 = ts12.unwrap();
-        assert_eq!(ts12.values, vec![1.0, 1.0, 1.0, 0.5]);
-    }
-
-    #[test]
-    #[allow(clippy::similar_names)]
-    fn apply_with_time() {
-        // Create a timeline
-        let from = Date::from_calendar_date(2022, Month::January, 1).unwrap();
-        let dur = Duration::new(0, 0, 2);
-        let dr = DateRange::from_duration(from, dur).unwrap();
-        let tl = Timeline::new(dr, Period::Quarter);
-
-        // Create two timeseries
-        let v1 = vec![1, 2, 3, 4, 1, 2, 3, 4];
-        let ts1 = TimeSeries::new(&tl, v1).unwrap();
-        let v2 = vec![5, 6, 7, 8, 9, 10, 11, 12];
-        let ts2 = TimeSeries::new(&tl, v2).unwrap();
-
-        // Create a date
-        let date = (from + Duration::new(0, 4, 1)).unwrap().primary();
-        // Write a generic function that can be pairwise applied to the elements of a TS and check OK
-        let op = |(t, &a, &b): (DateRange, &i32, &i32)| -> i32 {
-            if t.contains(date) {
-                1000
-            } else if a < 3 {
-                1
-            } else {
-                b + 1
-            }
-        };
-        let ts3 = ts1.apply_with_time(&ts2, op);
-        assert!(ts3.is_ok());
-
-        // Check values in added TS
-        let ts3 = ts3.unwrap();
-        assert_eq!(ts3.values, vec![1, 1, 8, 9, 1, 1000, 12, 13]);
-
-        // Check adding TS with different timeline is not OK
-        let tl2 = Timeline::new(dr, Period::Year);
-        let v4 = vec![1, 2];
-        let ts4 = TimeSeries::new(&tl2, v4).unwrap();
-        let ts5 = ts4.apply_with_time(&ts1, op);
-        assert!(ts5.is_err());
-    }
-
-    #[test]
-    #[allow(clippy::similar_names)]
     fn add_timeseries() {
         // Create a timeline
         let from = Date::from_calendar_date(2022, Month::January, 10).unwrap();
@@ -2507,5 +2254,89 @@ mod tests {
         assert_eq!(ts1.sum_product(&ts2).unwrap(), 810);
         assert_eq!(ts1.sum(), 36);
         assert_eq!(ts2.sum(), 103);
+    }
+
+    #[test]
+    fn fx_macro() {
+        use crate::fx;
+
+        // Create a timeline
+        let from = Date::from_calendar_date(2022, Month::January, 10).unwrap();
+        let to = Date::from_calendar_date(2023, Month::January, 10).unwrap();
+        let dr = DateRange::new(from, to);
+        let tl = Timeline::new(dr, Period::Quarter);
+
+        // Create two timeseries
+        let v1 = vec![1, 2, 3, 4];
+        let ts1 = TimeSeries::new(&tl, v1).unwrap();
+        let v2 = vec![5, 6, 7, 8];
+        let ts2 = TimeSeries::new(&tl, v2).unwrap();
+
+        // Write a generic function that can be pairwise applied to the elements
+        // of 2 TS and check OK
+        let op = |(&a, &b)| {
+            if a < 3 {
+                1
+            } else {
+                b + 1
+            }
+        };
+
+        let ts3 = fx!(op, &ts1, &ts2);
+        assert!(ts3.is_ok());
+        let ts3 = ts3.unwrap();
+        assert_eq!(ts3.values, vec![1, 1, 8, 9]);
+
+        // Write a generic function that can be pairwise applied to the elements
+        // of 3 TS and check OK
+        let op2 = |(&a, &b, &c)| {
+            if a % 2 == 0 {
+                1
+            } else {
+                b + c
+            }
+        };
+        let ts4 = fx!(op2, &ts1, &ts2, &ts3);
+        assert!(ts4.is_ok());
+        let ts4 = ts4.unwrap();
+        assert_eq!(ts4.values, vec![6, 1, 15, 1]);
+    }
+
+    #[test]
+    fn fxt_macro() {
+        use crate::fxt;
+
+        // Create a timeline
+        let from = Date::from_calendar_date(2022, Month::January, 10).unwrap();
+        let to = Date::from_calendar_date(2023, Month::January, 10).unwrap();
+        let dr = DateRange::new(from, to);
+        let tl = Timeline::new(dr, Period::Quarter);
+
+        // Create two timeseries
+        let v1 = vec![1, 2, 3, 4];
+        let ts1 = TimeSeries::new(&tl, v1).unwrap();
+        let v2 = vec![5, 6, 7, 8];
+        let ts2 = TimeSeries::new(&tl, v2).unwrap();
+
+        // Create a date
+        let date = (from + Duration::new(0, 4, 0)).unwrap().primary();
+
+        // Write a generic function that can be pairwise applied to the elements
+        // of 2 TS and check OK
+        // Need to specify types as Rust compiler cannot infer them here
+        let op = |(t, &a, &b): (DateRange, &i32, &i32)| {
+            if t.contains(date) {
+                1000
+            } else if a < 3 {
+                1
+            } else {
+                b + 1
+            }
+        };
+
+        let ts3 = fxt!(op, &ts1, &ts2);
+        assert!(ts3.is_ok());
+        let ts3 = ts3.unwrap();
+        assert_eq!(ts3.values, vec![1, 1000, 8, 9]);
     }
 }

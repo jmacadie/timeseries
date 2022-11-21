@@ -302,20 +302,22 @@ assert_eq!(
     vec![0, 600, 0, 4, 10, 18, 28, 40]
 );
 
-// We can also Write a generic function that can be pairwise applied to the elements of a TS
-let op = |(&a, &b): (&i32, &i32)| -> i32 {
+// We can also write a generic function that can be pairwise applied to the elements of a TS
+let op = |(&a, &b)| {
     if a < 3 {
         1
     } else {
         b + 1
     }
 };
-let mut ts10 = ts1.apply(&ts3, op).unwrap();
+let mut ts10 = fx!(op, &ts1, &ts3).unwrap();
 assert_eq!(ts10.value_range(dr).unwrap(), vec![1, 1, 1, 2, 3, 4, 5, 6]);
 
 // and we can pull the same trick, but additionally with reference to the timeline
 let date = Date::from_calendar_date(2023, Month::April, 1).unwrap();
-let op = |(t, &a, &b): (DateRange, &i32, &i32)| -> i32 {
+// Note: Need to declare the types of the input as the Rust compiler cannot 
+// infer types with this function
+let op = |(t, &a, &b): (DateRange, &i32, &i32)| {
     if t.contains(date) {
         1000
     } else if a < 3 {
@@ -324,7 +326,7 @@ let op = |(t, &a, &b): (DateRange, &i32, &i32)| -> i32 {
         b + 1
     }
 };
-ts10 = ts1.apply_with_time(&ts3, op).unwrap();
+ts10 = fxt!(op, &ts1, &ts3).unwrap();
 assert_eq!(
     ts10.value_range(dr).unwrap(),
     vec![1, 1, 1, 2, 3, 1000, 5, 6]
